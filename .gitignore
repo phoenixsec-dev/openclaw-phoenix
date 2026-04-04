@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.tgz
+.env
+.env.*
+
+# Design/planning docs -- local reference only
+DESIGN.md
