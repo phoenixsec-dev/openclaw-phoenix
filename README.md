@@ -4,31 +4,23 @@ OpenClaw plugin for [Phoenix Secrets Manager](https://github.com/phoenixsec-dev/
 
 ## Status
 
-Early development. Not yet published to npm.
+Phase 1 development plugin. Local-link install only for now.
 
 ## What this does
 
-Phoenix is a secrets manager purpose-built for AI agents. This plugin integrates it natively into OpenClaw so agents can resolve secrets at runtime with per-request access control, sealed responses (values never enter model context), and a full audit trail.
+This plugin adds three native OpenClaw tools plus a CLI helper:
 
-Two integration paths:
+- `phoenix_resolve` — resolve one or more `phoenix://` refs through Phoenix
+- `phoenix_list` — list visible secret paths
+- `phoenix_status` — check connectivity, admin-visible status, and TLS cert health
+- `openclaw phoenix verify` — dry-run all `phoenix://` refs currently present in the active gateway config
 
-- **Plugin tools** (runtime) -- agents call `phoenix_resolve` during execution. Per-request ACLs, sealed mode, step-up approval for privileged secrets.
-- **Exec provider** (startup) -- OpenClaw's built-in exec provider calls Phoenix at gateway boot for bulk secret resolution. Simpler but no per-agent scoping.
-
-## Requirements
-
-- Phoenix server (v0.13.3+) running and accessible from the OpenClaw gateway
-- OpenClaw with plugin support enabled
-- Phoenix credentials (bearer token or mTLS certs) for the gateway
+It also registers a gateway-startup connectivity check so Phoenix misconfiguration is surfaced immediately during startup.
 
 ## Installation
 
 ```bash
-# Local development
 openclaw plugins install ./path/to/openclaw-phoenix -l
-
-# From npm (not yet available)
-# openclaw plugins install openclaw-phoenix
 ```
 
 ## Configuration
@@ -36,17 +28,20 @@ openclaw plugins install ./path/to/openclaw-phoenix -l
 ```json5
 {
   plugins: {
+    allow: ["phoenix-secrets"],
     entries: {
       "phoenix-secrets": {
         enabled: true,
         config: {
-          server: "http://phoenix:9090",
-          token: "your-phoenix-token",
-          // Or mTLS:
+          server: "https://phoenix:9090",
+          // Prefer PHOENIX_TOKEN in the gateway environment for secrets.
+          token: "phoenix_token_here",
+          // Optional mTLS:
           // caCert: "/etc/phoenix/ca.crt",
           // clientCert: "/etc/phoenix/openclaw.crt",
           // clientKey: "/etc/phoenix/openclaw.key",
-          sealMode: false
+          defaultNamespace: "openclaw",
+          sealMode: true
         }
       }
     }
@@ -54,19 +49,26 @@ openclaw plugins install ./path/to/openclaw-phoenix -l
 }
 ```
 
-## Plugin tools
+Environment fallbacks:
 
-| Tool | Description |
-|------|-------------|
-| `phoenix_resolve` | Resolve one or more `phoenix://` references to values (or sealed tokens) |
-| `phoenix_list` | List available secret paths |
-| `phoenix_status` | Check Phoenix connectivity, cert validity, session info |
+- `PHOENIX_SERVER`
+- `PHOENIX_TOKEN`
+- `PHOENIX_CA_CERT`
+- `PHOENIX_CLIENT_CERT`
+- `PHOENIX_CLIENT_KEY`
+- `PHOENIX_DEFAULT_NAMESPACE`
+- `PHOENIX_SEAL_MODE`
 
-## Related
+## Development
 
-- [Phoenix Secrets Manager](https://github.com/phoenixsec-dev/phoenix)
-- [OpenClaw Plugin Documentation](https://docs.openclaw.ai/tools/plugin)
+Run tests locally:
 
-## License
+```bash
+npm test
+```
 
-MIT
+## Notes
+
+- `sealMode: true` returns opaque `PHOENIX_SEALED:` tokens instead of plaintext values.
+- Phoenix's current REST API does not expose a server version field, so `phoenix_status` reports that as unavailable instead of guessing.
+- No secrets or credentials are written to disk by this plugin.

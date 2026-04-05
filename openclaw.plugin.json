@@ -1,0 +1,64 @@
+{
+  "id": "phoenix-secrets",
+  "uiHints": {
+    "server": {
+      "label": "Phoenix Server URL",
+      "help": "Phoenix base URL (fallback: PHOENIX_SERVER).",
+      "placeholder": "https://phoenix:9090"
+    },
+    "token": {
+      "label": "Phoenix Token",
+      "help": "Bearer token for Phoenix (fallback: PHOENIX_TOKEN).",
+      "sensitive": true,
+      "placeholder": "phoenix_..."
+    },
+    "caCert": {
+      "label": "CA Certificate Path",
+      "help": "Optional CA certificate path for custom TLS trust (fallback: PHOENIX_CA_CERT)."
+    },
+    "clientCert": {
+      "label": "Client Certificate Path",
+      "help": "Optional client certificate path for mTLS (fallback: PHOENIX_CLIENT_CERT)."
+    },
+    "clientKey": {
+      "label": "Client Key Path",
+      "help": "Optional client key path for mTLS (fallback: PHOENIX_CLIENT_KEY).",
+      "sensitive": true
+    },
+    "defaultNamespace": {
+      "label": "Default Namespace",
+      "help": "Namespace used when callers pass bare secret ids instead of full phoenix:// refs."
+    },
+    "sealMode": {
+      "label": "Sealed Mode",
+      "help": "Return opaque PHOENIX_SEALED tokens instead of plaintext values."
+    }
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "server": {
+        "type": "string"
+      },
+      "token": {
+        "type": "string"
+      },
+      "caCert": {
+        "type": "string"
+      },
+      "clientCert": {
+        "type": "string"
+      },
+      "clientKey": {
+        "type": "string"
+      },
+      "defaultNamespace": {
+        "type": "string"
+      },
+      "sealMode": {
+        "type": "boolean"
+      }
+    }
+  }
+}
