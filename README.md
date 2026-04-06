@@ -17,11 +17,19 @@ This plugin adds three native OpenClaw tools plus a CLI helper:
 
 It also registers a gateway-startup connectivity check so Phoenix misconfiguration is surfaced immediately during startup.
 
+Important: this Phase 1 plugin is a **tool-based integration**. It does **not** hook Phoenix into OpenClaw's built-in SecretRef object resolution, so raw `phoenix://...` strings in gateway config env fields are not supported by this plugin alone.
+
 ## Installation
 
 ```bash
 openclaw plugins install ./path/to/openclaw-phoenix -l
 ```
+
+See also:
+- `docs/openclaw-guide.md`
+- `docs/integrations.md`
+- `examples/openclaw-plugin/`
+- `examples/openclaw-docker/`
 
 ## Configuration
 

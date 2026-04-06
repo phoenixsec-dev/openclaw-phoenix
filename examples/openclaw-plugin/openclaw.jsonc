@@ -1,0 +1,15 @@
+{
+  plugins: {
+    allow: ["phoenix-secrets"],
+    entries: {
+      "phoenix-secrets": {
+        enabled: true,
+        config: {
+          server: "${PHOENIX_SERVER}",
+          defaultNamespace: "${PHOENIX_DEFAULT_NAMESPACE}",
+          sealMode: true
+        }
+      }
+    }
+  }
+}

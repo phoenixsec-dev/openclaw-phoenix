@@ -1,0 +1,18 @@
+{
+  plugins: {
+    allow: ["phoenix-secrets"],
+    load: {
+      paths: ["/plugins/openclaw-phoenix"]
+    },
+    entries: {
+      "phoenix-secrets": {
+        enabled: true,
+        config: {
+          server: "${PHOENIX_SERVER}",
+          defaultNamespace: "${PHOENIX_DEFAULT_NAMESPACE}",
+          sealMode: true
+        }
+      }
+    }
+  }
+}

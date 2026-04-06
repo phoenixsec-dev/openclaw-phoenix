@@ -1,0 +1,29 @@
+services:
+  phoenix:
+    image: ghcr.io/phoenixsec-dev/phoenix:latest
+    container_name: phoenix
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+
+  openclaw:
+    image: ghcr.io/openclaw/openclaw:latest
+    container_name: openclaw
+    depends_on:
+      - phoenix
+    ports:
+      - "${OPENCLAW_GATEWAY_PORT:-8080}:8080"
+    environment:
+      PHOENIX_SERVER: "${PHOENIX_SERVER}"
+      PHOENIX_DEFAULT_NAMESPACE: "${PHOENIX_DEFAULT_NAMESPACE}"
+      PHOENIX_SEAL_MODE: "${PHOENIX_SEAL_MODE}"
+      PHOENIX_CA_CERT: "/run/phoenix/ca.crt"
+      PHOENIX_CLIENT_CERT: "/run/phoenix/client.crt"
+      PHOENIX_CLIENT_KEY: "/run/phoenix/client.key"
+    volumes:
+      - ../../:/plugins/openclaw-phoenix:ro
+      - ./openclaw.jsonc:/root/.openclaw/openclaw.jsonc:ro
+      - /path/to/phoenix-ca.crt:/run/phoenix/ca.crt:ro
+      - /path/to/openclaw-client.crt:/run/phoenix/client.crt:ro
+      - /path/to/openclaw-client.key:/run/phoenix/client.key:ro
+    restart: unless-stopped
