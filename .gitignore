@@ -6,4 +6,4 @@ dist/
 !.env.example
 
 # Design/planning docs -- local reference only
-DESIGN.md
+#DESIGN.md
