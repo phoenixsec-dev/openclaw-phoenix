@@ -17,7 +17,7 @@ This plugin adds three native OpenClaw tools plus a CLI helper:
 
 It also registers a gateway-startup connectivity check so Phoenix misconfiguration is surfaced immediately during startup.
 
-Important: this Phase 1 plugin is a **tool-based integration**. It does **not** hook Phoenix into OpenClaw's built-in SecretRef object resolution, so raw `phoenix://...` strings in gateway config env fields are not supported by this plugin alone.
+Important: this Phase 1 plugin is a **tool-based integration**. It does **not** hook Phoenix into OpenClaw's built-in SecretRef object resolution, so raw `phoenix://...` strings in gateway config env fields are not supported by this plugin alone. For built-in OpenClaw SecretRefs and bootstrap/config secrets, use Phoenix CLI v0.14.0+ as an exec provider (`phoenix resolve --stdin-json`, alias `phoenix openclaw-exec-provider`).
 
 ## Installation
 

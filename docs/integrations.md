@@ -40,7 +40,7 @@ Expected response:
 }
 ```
 
-At the moment, this repo ships the plugin path. Phoenix-side exec protocol support is a separate change.
+This repo ships the plugin path. For built-in OpenClaw SecretRefs, use Phoenix CLI v0.14.0+ with `phoenix resolve --stdin-json` (aliases: `phoenix openclaw-exec-provider`, `phoenix secret-provider openclaw`).
 
 
 ### SecretRef vs plugin-tool refs

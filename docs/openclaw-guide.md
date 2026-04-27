@@ -21,11 +21,11 @@ There are two integration paths:
    - this avoids the Docker lifecycle issues around `phoenix exec`
    - **important:** this Phase 1 plugin does **not** hook into OpenClaw's built-in SecretRef resolution
 
-2. **Exec provider path — fallback/simple path**
+2. **Exec provider path — bootstrap/config path**
    - OpenClaw resolves refs at startup via its built-in exec provider
-   - best for bulk startup-only secrets
-   - simpler operationally, but weaker for per-agent policy enforcement
-   - **status:** the protocol is documented here, but Phoenix CLI support for the OpenClaw stdin/stdout exec protocol is a separate Phoenix-side change and is not implemented in this repo
+   - best for gateway auth tokens, model/API keys, channel bot tokens, and other startup-only secrets
+   - Phoenix CLI v0.14.0+ supports OpenClaw's stdin/stdout exec protocol via `phoenix resolve --stdin-json` (aliases: `phoenix openclaw-exec-provider`, `phoenix secret-provider openclaw`)
+   - simpler operationally, but weaker for per-agent runtime policy enforcement than plugin tool calls
 
 ## Recommended usage by risk tier
 
@@ -118,7 +118,7 @@ These are **not** the same thing:
 
 This Phase 1 plugin supports the first form only. Installing the plugin does **not** make raw `phoenix://...` strings inside `agents.defaults.env` work as built-in OpenClaw secrets.
 
-If you want built-in startup secret resolution, use the exec-provider path once Phoenix-side support for OpenClaw's exec protocol exists.
+If you want built-in startup secret resolution, use OpenClaw's exec-provider path with Phoenix CLI v0.14.0+.
 
 ## Plugin configuration
 
@@ -270,7 +270,7 @@ Expected output:
 ```
 
 Migration note:
-- older docs/examples that imply `phoenix resolve <ref>` argument-by-argument execution are not compatible with OpenClaw's actual exec provider contract
+- older docs/examples that imply plain `phoenix resolve <ref>` argument-by-argument execution are not compatible with OpenClaw's actual exec provider contract; use `phoenix resolve --stdin-json` or one of its OpenClaw aliases
 - if you need exec mode, implement or wait for Phoenix CLI support for this protocol on the Phoenix side
 
 ## Anti-patterns
