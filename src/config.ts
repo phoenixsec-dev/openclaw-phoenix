@@ -1,6 +1,7 @@
 export type PhoenixPluginConfig = {
   server: string;
   token?: string;
+  tokenFile?: string;
   caCert?: string;
   clientCert?: string;
   clientKey?: string;
@@ -25,6 +26,7 @@ export const phoenixPluginConfigJsonSchema = {
   properties: {
     server: { type: "string" },
     token: { type: "string" },
+    tokenFile: { type: "string" },
     caCert: { type: "string" },
     clientCert: { type: "string" },
     clientKey: { type: "string" },
@@ -44,6 +46,11 @@ export const phoenixPluginConfigUiHints = {
     help: "Bearer token for Phoenix (fallback: PHOENIX_TOKEN).",
     sensitive: true,
     placeholder: "phoenix_...",
+  },
+  tokenFile: {
+    label: "Phoenix Token File",
+    help: "Path to a bearer token file (fallback: PHOENIX_TOKEN_FILE). Prefer this over embedding token values in config.",
+    sensitive: true,
   },
   caCert: {
     label: "CA Certificate Path",
@@ -115,6 +122,10 @@ export function resolvePhoenixPluginConfig(
   }
 
   const token = readString(raw.token) ?? readString(env.PHOENIX_TOKEN);
+  const tokenFile = resolveMaybePath(
+    readString(raw.tokenFile) ?? readString(env.PHOENIX_TOKEN_FILE),
+    resolvePath,
+  );
   const caCert = resolveMaybePath(readString(raw.caCert) ?? readString(env.PHOENIX_CA_CERT), resolvePath);
   const clientCert = resolveMaybePath(
     readString(raw.clientCert) ?? readString(env.PHOENIX_CLIENT_CERT),
@@ -131,9 +142,9 @@ export function resolvePhoenixPluginConfig(
   const sealMode =
     explicitSealMode ?? TRUE_VALUES.has((env.PHOENIX_SEAL_MODE ?? "").trim().toLowerCase());
 
-  if (!token && !(clientCert && clientKey)) {
+  if (!token && !tokenFile && !(clientCert && clientKey)) {
     throw new Error(
-      "phoenix-secrets config requires either token auth or both clientCert and clientKey for mTLS",
+      "phoenix-secrets config requires token auth, tokenFile auth, or both clientCert and clientKey for mTLS",
     );
   }
 
@@ -148,6 +159,7 @@ export function resolvePhoenixPluginConfig(
   return {
     server: parsedUrl.toString().replace(/\/$/, ""),
     ...(token ? { token } : {}),
+    ...(tokenFile ? { tokenFile } : {}),
     ...(caCert ? { caCert } : {}),
     ...(clientCert ? { clientCert } : {}),
     ...(clientKey ? { clientKey } : {}),

@@ -12,6 +12,11 @@
       "sensitive": true,
       "placeholder": "phoenix_..."
     },
+    "tokenFile": {
+      "label": "Phoenix Token File",
+      "help": "Path to a bearer token file (fallback: PHOENIX_TOKEN_FILE). Prefer this over embedding token values in config.",
+      "sensitive": true
+    },
     "caCert": {
       "label": "CA Certificate Path",
       "help": "Optional CA certificate path for custom TLS trust (fallback: PHOENIX_CA_CERT)."
@@ -42,6 +47,9 @@
         "type": "string"
       },
       "token": {
+        "type": "string"
+      },
+      "tokenFile": {
         "type": "string"
       },
       "caCert": {

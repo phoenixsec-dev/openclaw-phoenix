@@ -2,6 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { once } from "node:events";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { PhoenixClient, PhoenixApiError } from "../src/client.ts";
 
 async function withServer(
@@ -56,6 +59,31 @@ test("PhoenixClient resolve sends tool headers and returns plaintext values", as
     });
     assert.deepEqual(result.errors, {});
   });
+});
+
+test("PhoenixClient reads bearer auth from tokenFile", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-phoenix-test-"));
+  const tokenFile = path.join(dir, "token");
+  await fs.writeFile(tokenFile, "file-token\n", "utf8");
+  try {
+    await withServer(async (req, res) => {
+      assert.equal(req.headers.authorization, "Bearer file-token");
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ status: "ok" }));
+    }, async (baseUrl) => {
+      const client = new PhoenixClient({
+        server: baseUrl,
+        tokenFile,
+        sealMode: false,
+      });
+
+      const { health } = await client.health();
+      assert.equal(health.status, "ok");
+    });
+  } finally {
+    await fs.unlink(tokenFile).catch(() => undefined);
+    await fs.rmdir(dir).catch(() => undefined);
+  }
 });
 
 test("PhoenixClient resolve returns opaque sealed tokens in sealMode", async () => {

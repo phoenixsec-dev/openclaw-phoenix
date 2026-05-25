@@ -99,7 +99,7 @@ type JsonResponse = {
 };
 
 function normalizeAuthMode(config: PhoenixPluginConfig): PhoenixStatusResponse["authMode"] {
-  const hasBearer = Boolean(config.token);
+  const hasBearer = Boolean(config.token || config.tokenFile);
   const hasMtls = Boolean(config.clientCert && config.clientKey);
   if (hasBearer && hasMtls) {
     return "bearer+mTLS";
@@ -247,9 +247,29 @@ export function formatPhoenixError(error: unknown): string {
 export class PhoenixClient {
   private readonly config: PhoenixPluginConfig;
   private tlsMaterialPromise?: Promise<{ ca?: string; cert?: string; key?: string }>;
+  private tokenFilePromise?: Promise<string>;
 
   constructor(config: PhoenixPluginConfig) {
     this.config = config;
+  }
+
+  private async loadBearerToken(): Promise<string | undefined> {
+    if (this.config.token) {
+      return this.config.token;
+    }
+    if (!this.config.tokenFile) {
+      return undefined;
+    }
+    if (!this.tokenFilePromise) {
+      this.tokenFilePromise = fs.readFile(this.config.tokenFile, "utf8").then((raw) => {
+        const token = raw.trim();
+        if (!token) {
+          throw new Error(`Phoenix token file is empty: ${this.config.tokenFile}`);
+        }
+        return token;
+      });
+    }
+    return await this.tokenFilePromise;
   }
 
   private async loadTlsMaterial() {
@@ -274,11 +294,12 @@ export class PhoenixClient {
     }
 
     const bodyText = options.body === undefined ? undefined : JSON.stringify(options.body);
+    const bearerToken = await this.loadBearerToken();
     const headers: Record<string, string> = {
       accept: "application/json",
       ...buildCallerHeaders(options.caller),
       ...(options.toolName ? { "X-Phoenix-Tool": options.toolName } : {}),
-      ...(this.config.token ? { authorization: `Bearer ${this.config.token}` } : {}),
+      ...(bearerToken ? { authorization: `Bearer ${bearerToken}` } : {}),
       ...(bodyText ? { "content-type": "application/json", "content-length": String(Buffer.byteLength(bodyText)) } : {}),
     };
 

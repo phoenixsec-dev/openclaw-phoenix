@@ -93,6 +93,7 @@ Then enable/configure it in OpenClaw config:
         enabled: true,
         config: {
           server: "https://phoenix:9090",
+          tokenFile: "/home/openclaw/.config/phoenix/token",
           defaultNamespace: "openclaw",
           sealMode: true
         }
@@ -125,7 +126,8 @@ If you want built-in startup secret resolution, use OpenClaw's exec-provider pat
 Config fields:
 
 - `server` — Phoenix base URL
-- `token` — bearer token, optional if mTLS is used
+- `token` — bearer token, optional if `tokenFile` or mTLS is used
+- `tokenFile` — path to a scoped bearer token file; preferred over embedding token values in config
 - `caCert` — optional CA bundle path
 - `clientCert` — client cert path for mTLS
 - `clientKey` — client private key path for mTLS
@@ -136,6 +138,7 @@ Environment fallbacks:
 
 - `PHOENIX_SERVER`
 - `PHOENIX_TOKEN`
+- `PHOENIX_TOKEN_FILE`
 - `PHOENIX_CA_CERT`
 - `PHOENIX_CLIENT_CERT`
 - `PHOENIX_CLIENT_KEY`
@@ -148,8 +151,8 @@ Environment fallbacks:
 
 Use this for simple local/dev setups.
 
-- mount or inject `PHOENIX_TOKEN` into the OpenClaw gateway environment
-- scope the token narrowly
+- prefer `tokenFile` or `PHOENIX_TOKEN_FILE` pointing at an existing scoped token file
+- if you inject `PHOENIX_TOKEN` directly, scope it narrowly and understand it becomes part of the gateway process environment
 - do **not** use a broad admin token as the normal gateway credential
 
 ### mTLS pattern

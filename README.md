@@ -42,8 +42,8 @@ See also:
         enabled: true,
         config: {
           server: "https://phoenix:9090",
-          // Prefer PHOENIX_TOKEN in the gateway environment for secrets.
-          token: "phoenix_token_here",
+          // Prefer tokenFile or PHOENIX_TOKEN_FILE over embedding token values.
+          tokenFile: "/home/openclaw/.config/phoenix/token",
           // Optional mTLS:
           // caCert: "/etc/phoenix/ca.crt",
           // clientCert: "/etc/phoenix/openclaw.crt",
@@ -61,6 +61,7 @@ Environment fallbacks:
 
 - `PHOENIX_SERVER`
 - `PHOENIX_TOKEN`
+- `PHOENIX_TOKEN_FILE`
 - `PHOENIX_CA_CERT`
 - `PHOENIX_CLIENT_CERT`
 - `PHOENIX_CLIENT_KEY`
@@ -80,3 +81,4 @@ npm test
 - `sealMode: true` returns opaque `PHOENIX_SEALED:` tokens instead of plaintext values.
 - Phoenix's current REST API does not expose a server version field, so `phoenix_status` reports that as unavailable instead of guessing.
 - No secrets or credentials are written to disk by this plugin.
+- `tokenFile` reads an existing scoped bearer token at runtime so operators do not need to paste token values into `openclaw.json` or `/etc/default/openclaw`.

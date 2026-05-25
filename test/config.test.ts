@@ -39,6 +39,22 @@ test("resolvePhoenixPluginConfig accepts token auth from env", () => {
   assert.equal(config.sealMode, false);
 });
 
+test("resolvePhoenixPluginConfig accepts tokenFile auth", () => {
+  const config = resolvePhoenixPluginConfig(
+    {
+      server: "http://phoenix:9090",
+      tokenFile: "./phoenix-token",
+    },
+    {
+      resolvePath: (input) => `/resolved/${input}`,
+    },
+  );
+
+  assert.equal(config.server, "http://phoenix:9090");
+  assert.equal(config.tokenFile, "/resolved/./phoenix-token");
+  assert.equal(config.sealMode, false);
+});
+
 test("resolvePhoenixPluginConfig rejects missing auth", () => {
   assert.throws(
     () =>
@@ -48,6 +64,6 @@ test("resolvePhoenixPluginConfig rejects missing auth", () => {
         },
         { env: {} },
       ),
-    /requires either token auth or both clientCert and clientKey/,
+    /requires token auth, tokenFile auth, or both clientCert and clientKey/,
   );
 });
