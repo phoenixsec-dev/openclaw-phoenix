@@ -1,5 +1,11 @@
 {
   "id": "phoenix-secrets",
+  "contracts": {
+    "tools": ["phoenix_resolve", "phoenix_list", "phoenix_status"]
+  },
+  "activation": {
+    "onCapabilities": ["tool"]
+  },
   "uiHints": {
     "server": {
       "label": "Phoenix Server URL",
