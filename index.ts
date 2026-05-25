@@ -28,7 +28,7 @@ export default definePluginEntry({
           requesterSenderId: ctx.requesterSenderId,
           senderIsOwner: ctx.senderIsOwner,
         }),
-      { name: "phoenix_resolve" },
+      { name: "phoenix_resolve", optional: true },
     );
 
     api.registerTool(
@@ -41,7 +41,7 @@ export default definePluginEntry({
           requesterSenderId: ctx.requesterSenderId,
           senderIsOwner: ctx.senderIsOwner,
         }),
-      { name: "phoenix_list" },
+      { name: "phoenix_list", optional: true },
     );
 
     api.registerTool(
@@ -54,7 +54,7 @@ export default definePluginEntry({
           requesterSenderId: ctx.requesterSenderId,
           senderIsOwner: ctx.senderIsOwner,
         }),
-      { name: "phoenix_status" },
+      { name: "phoenix_status", optional: true },
     );
 
     api.registerHook(
