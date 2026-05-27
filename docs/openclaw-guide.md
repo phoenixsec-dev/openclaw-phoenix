@@ -105,6 +105,17 @@ Then enable/configure it in OpenClaw config:
 
 That enables the tool-based integration only. It does **not** wire Phoenix into `agents.defaults.env` or other built-in SecretRef fields by itself.
 
+The plugin registers its tools as optional. Expose them intentionally through OpenClaw tool policy. A conservative first rollout is to allow only `phoenix_status` and deny `phoenix_resolve`/`phoenix_list` until per-agent identity and sealed-mode behavior are validated.
+
+```json5
+{
+  tools: {
+    alsoAllow: ["phoenix_status"],
+    deny: ["phoenix_resolve", "phoenix_list"]
+  }
+}
+```
+
 ## Important distinction: plugin refs vs OpenClaw SecretRefs
 
 These are **not** the same thing:
