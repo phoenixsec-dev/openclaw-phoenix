@@ -51,7 +51,9 @@ See also:
           // clientCert: "/etc/phoenix/openclaw.crt",
           // clientKey: "/etc/phoenix/openclaw.key",
           defaultNamespace: "openclaw",
-          sealMode: true
+          sealMode: true,
+          // Required when sealMode is true; may also be PHOENIX_SEAL_KEY.
+          sealKeyFile: "/home/openclaw/.config/phoenix/keys/openclaw-agent.seal.key"
         }
       }
     }
@@ -69,6 +71,13 @@ Environment fallbacks:
 - `PHOENIX_CLIENT_KEY`
 - `PHOENIX_DEFAULT_NAMESPACE`
 - `PHOENIX_SEAL_MODE`
+- `PHOENIX_SEAL_KEY` — path to the agent's persistent X25519 seal private key file
+
+### Sealed mode
+
+`sealMode: true` requires a persistent private seal key file via `sealKeyFile` or `PHOENIX_SEAL_KEY`. The plugin reads that file at runtime, derives the matching public key, and sends it as `X-Phoenix-Seal-Key` on `phoenix_resolve` requests. Tool output stays opaque as `PHOENIX_SEALED:*`; the plugin does not return plaintext values in sealed mode.
+
+Before live use, register the derived public seal key with Phoenix for the OpenClaw agent/session identity. A configured key file alone is not enough if Phoenix has no registered public key. For CT120, keep the conservative rollout policy: do not deploy or enable broad `phoenix_resolve`/`phoenix_list` access until the scoped credential, registered public seal key, and tool allowlist have been validated.
 
 ## Development
 
@@ -80,7 +89,8 @@ npm test
 
 ## Notes
 
-- `sealMode: true` returns opaque `PHOENIX_SEALED:` tokens instead of plaintext values.
+- `sealMode: true` returns opaque `PHOENIX_SEALED:` tokens instead of plaintext values and requires `sealKeyFile` or `PHOENIX_SEAL_KEY`.
 - Phoenix's current REST API does not expose a server version field, so `phoenix_status` reports that as unavailable instead of guessing.
 - No secrets or credentials are written to disk by this plugin.
 - `tokenFile` reads an existing scoped bearer token at runtime so operators do not need to paste token values into `openclaw.json` or `/etc/default/openclaw`.
+- `sealKeyFile` reads an existing per-agent private seal key file; keep permissions tight and never commit it.

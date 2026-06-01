@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { createPrivateKey, createPublicKey } from "node:crypto";
 import http from "node:http";
 import https from "node:https";
 import type { Socket } from "node:net";
@@ -140,14 +141,57 @@ function buildCallerHeaders(caller?: PhoenixCallerContext): Record<string, strin
   return headers;
 }
 
+const SEAL_KEY_SIZE_BYTES = 32;
+const X25519_PRIVATE_KEY_DER_PREFIX = Buffer.from("302e020100300506032b656e04220420", "hex");
+const X25519_PUBLIC_KEY_DER_PREFIX = Buffer.from("302a300506032b656e032100", "hex");
+
 function encodeOpaqueSealedToken(envelope: unknown): string {
   return `PHOENIX_SEALED:${Buffer.from(JSON.stringify(envelope), "utf8").toString("base64")}`;
 }
 
-async function buildSealHeader(): Promise<string> {
-  const keyPair = await crypto.subtle.generateKey({ name: "X25519" }, true, ["deriveBits"]);
-  const rawPublicKey = await crypto.subtle.exportKey("raw", keyPair.publicKey);
-  return Buffer.from(rawPublicKey).toString("base64");
+function decodeSealPrivateKey(raw: string, source: string): Buffer {
+  const encoded = raw.trim();
+  if (!encoded) {
+    throw new Error(`Phoenix seal key file is empty: ${source}`);
+  }
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(encoded) || encoded.length % 4 !== 0) {
+    throw new Error(`Phoenix seal key file contains invalid base64: ${source}`);
+  }
+  const privateKey = Buffer.from(encoded, "base64");
+  if (privateKey.length !== SEAL_KEY_SIZE_BYTES) {
+    throw new Error(
+      `Phoenix seal key file must contain a base64-encoded ${SEAL_KEY_SIZE_BYTES}-byte private key: ${source}`,
+    );
+  }
+  return privateKey;
+}
+
+function deriveSealPublicKey(privateKey: Buffer, source: string): Buffer {
+  try {
+    const keyObject = createPrivateKey({
+      key: Buffer.concat([X25519_PRIVATE_KEY_DER_PREFIX, privateKey]),
+      format: "der",
+      type: "pkcs8",
+    });
+    const publicDer = createPublicKey(keyObject).export({ format: "der", type: "spki" });
+    if (!Buffer.isBuffer(publicDer) || publicDer.length !== X25519_PUBLIC_KEY_DER_PREFIX.length + SEAL_KEY_SIZE_BYTES) {
+      throw new Error("unexpected X25519 public key export format");
+    }
+    if (!publicDer.subarray(0, X25519_PUBLIC_KEY_DER_PREFIX.length).equals(X25519_PUBLIC_KEY_DER_PREFIX)) {
+      throw new Error("unexpected X25519 public key DER prefix");
+    }
+    return Buffer.from(publicDer.subarray(X25519_PUBLIC_KEY_DER_PREFIX.length));
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`Could not derive Phoenix seal public key from ${source}: ${detail}`);
+  }
+}
+
+async function buildSealHeader(sealKeyFile: string): Promise<string> {
+  const rawPrivateKey = await fs.readFile(sealKeyFile, "utf8");
+  const privateKey = decodeSealPrivateKey(rawPrivateKey, sealKeyFile);
+  const publicKey = deriveSealPublicKey(privateKey, sealKeyFile);
+  return publicKey.toString("base64");
 }
 
 function normalizePeerCertificate(socket?: Socket | null): PhoenixPeerCertificate | undefined {
@@ -248,6 +292,7 @@ export class PhoenixClient {
   private readonly config: PhoenixPluginConfig;
   private tlsMaterialPromise?: Promise<{ ca?: string; cert?: string; key?: string }>;
   private tokenFilePromise?: Promise<string>;
+  private sealHeaderPromise?: Promise<string>;
 
   constructor(config: PhoenixPluginConfig) {
     this.config = config;
@@ -285,6 +330,16 @@ export class PhoenixClient {
     return this.tlsMaterialPromise;
   }
 
+  private async loadSealHeader(): Promise<string> {
+    if (!this.config.sealKeyFile) {
+      throw new Error("Phoenix sealMode requires sealKeyFile (or PHOENIX_SEAL_KEY)");
+    }
+    if (!this.sealHeaderPromise) {
+      this.sealHeaderPromise = buildSealHeader(this.config.sealKeyFile);
+    }
+    return this.sealHeaderPromise;
+  }
+
   private async requestJson(options: RequestOptions): Promise<JsonResponse> {
     const url = new URL(options.pathname, `${this.config.server}/`);
     if (options.query) {
@@ -304,7 +359,7 @@ export class PhoenixClient {
     };
 
     if (this.config.sealMode && options.toolName === "phoenix_resolve") {
-      headers["X-Phoenix-Seal-Key"] = await buildSealHeader();
+      headers["X-Phoenix-Seal-Key"] = await this.loadSealHeader();
     }
 
     const transport = url.protocol === "https:" ? https : http;

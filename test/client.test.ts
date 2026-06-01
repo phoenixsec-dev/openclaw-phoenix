@@ -7,6 +7,9 @@ import os from "node:os";
 import path from "node:path";
 import { PhoenixClient, PhoenixApiError } from "../src/client.ts";
 
+const TEST_SEAL_PRIVATE_KEY = "dwdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LCo=";
+const TEST_SEAL_PUBLIC_KEY = "hSDwCYkwp1R0i33ctD73Wg2/Og0mOBr066SpjqqbTmo=";
+
 async function withServer(
   handler: Parameters<typeof http.createServer>[0],
   run: (baseUrl: string) => Promise<void>,
@@ -23,6 +26,18 @@ async function withServer(
   } finally {
     server.close();
     await once(server, "close");
+  }
+}
+
+async function withSealKeyFile(run: (sealKeyFile: string) => Promise<void>) {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-phoenix-seal-test-"));
+  const sealKeyFile = path.join(dir, "agent.seal.key");
+  await fs.writeFile(sealKeyFile, `${TEST_SEAL_PRIVATE_KEY}\n`, { encoding: "utf8", mode: 0o600 });
+  try {
+    await run(sealKeyFile);
+  } finally {
+    await fs.unlink(sealKeyFile).catch(() => undefined);
+    await fs.rmdir(dir).catch(() => undefined);
   }
 }
 
@@ -86,36 +101,62 @@ test("PhoenixClient reads bearer auth from tokenFile", async () => {
   }
 });
 
-test("PhoenixClient resolve returns opaque sealed tokens in sealMode", async () => {
-  await withServer(async (req, res) => {
-    assert.equal(typeof req.headers["x-phoenix-seal-key"], "string");
-    res.setHeader("content-type", "application/json");
-    res.end(
-      JSON.stringify({
-        sealed_values: {
-          "phoenix://openclaw/api-key": {
-            version: 1,
-            algorithm: "x25519-xsalsa20-poly1305",
-            path: "openclaw/api-key",
-            ref: "phoenix://openclaw/api-key",
-            ephemeral_key: "abc",
-            nonce: "def",
-            ciphertext: "ghi",
-          },
-        },
-      }),
-    );
-  }, async (baseUrl) => {
-    const client = new PhoenixClient({
-      server: baseUrl,
-      token: "token",
-      defaultNamespace: "openclaw",
-      sealMode: true,
-    });
+test("PhoenixClient derives a stable seal key header from sealKeyFile", async () => {
+  const seenHeaders: string[] = [];
+  await withSealKeyFile(async (sealKeyFile) => {
+    await withServer(async (req, res) => {
+      seenHeaders.push(String(req.headers["x-phoenix-seal-key"] ?? ""));
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ sealed_values: {} }));
+    }, async (baseUrl) => {
+      const client = new PhoenixClient({
+        server: baseUrl,
+        token: "token",
+        sealKeyFile,
+        sealMode: true,
+      });
 
-    const result = await client.resolve(["api-key"]);
-    assert.equal(result.mode, "sealed");
-    assert.match(result.values["phoenix://openclaw/api-key"], /^PHOENIX_SEALED:/);
+      await client.resolve(["phoenix://openclaw/api-key"]);
+      await client.resolve(["phoenix://openclaw/other-key"]);
+    });
+  });
+
+  assert.deepEqual(seenHeaders, [TEST_SEAL_PUBLIC_KEY, TEST_SEAL_PUBLIC_KEY]);
+});
+
+test("PhoenixClient resolve returns opaque sealed tokens in sealMode", async () => {
+  await withSealKeyFile(async (sealKeyFile) => {
+    await withServer(async (req, res) => {
+      assert.equal(req.headers["x-phoenix-seal-key"], TEST_SEAL_PUBLIC_KEY);
+      res.setHeader("content-type", "application/json");
+      res.end(
+        JSON.stringify({
+          sealed_values: {
+            "phoenix://openclaw/api-key": {
+              version: 1,
+              algorithm: "x25519-xsalsa20-poly1305",
+              path: "openclaw/api-key",
+              ref: "phoenix://openclaw/api-key",
+              ephemeral_key: "abc",
+              nonce: "def",
+              ciphertext: "ghi",
+            },
+          },
+        }),
+      );
+    }, async (baseUrl) => {
+      const client = new PhoenixClient({
+        server: baseUrl,
+        token: "token",
+        sealKeyFile,
+        defaultNamespace: "openclaw",
+        sealMode: true,
+      });
+
+      const result = await client.resolve(["api-key"]);
+      assert.equal(result.mode, "sealed");
+      assert.match(result.values["phoenix://openclaw/api-key"], /^PHOENIX_SEALED:/);
+    });
   });
 });
 

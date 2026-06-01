@@ -2,6 +2,7 @@ export type PhoenixPluginConfig = {
   server: string;
   token?: string;
   tokenFile?: string;
+  sealKeyFile?: string;
   caCert?: string;
   clientCert?: string;
   clientKey?: string;
@@ -27,6 +28,7 @@ export const phoenixPluginConfigJsonSchema = {
     server: { type: "string" },
     token: { type: "string" },
     tokenFile: { type: "string" },
+    sealKeyFile: { type: "string" },
     caCert: { type: "string" },
     clientCert: { type: "string" },
     clientKey: { type: "string" },
@@ -50,6 +52,11 @@ export const phoenixPluginConfigUiHints = {
   tokenFile: {
     label: "Phoenix Token File",
     help: "Path to a bearer token file (fallback: PHOENIX_TOKEN_FILE). Prefer this over embedding token values in config.",
+    sensitive: true,
+  },
+  sealKeyFile: {
+    label: "Phoenix Seal Key File",
+    help: "Path to the agent's persistent X25519 seal private key file (fallback: PHOENIX_SEAL_KEY). Required when sealMode is enabled.",
     sensitive: true,
   },
   caCert: {
@@ -126,6 +133,10 @@ export function resolvePhoenixPluginConfig(
     readString(raw.tokenFile) ?? readString(env.PHOENIX_TOKEN_FILE),
     resolvePath,
   );
+  const sealKeyFile = resolveMaybePath(
+    readString(raw.sealKeyFile) ?? readString(env.PHOENIX_SEAL_KEY),
+    resolvePath,
+  );
   const caCert = resolveMaybePath(readString(raw.caCert) ?? readString(env.PHOENIX_CA_CERT), resolvePath);
   const clientCert = resolveMaybePath(
     readString(raw.clientCert) ?? readString(env.PHOENIX_CLIENT_CERT),
@@ -152,6 +163,10 @@ export function resolvePhoenixPluginConfig(
     throw new Error("phoenix-secrets mTLS requires both clientCert and clientKey");
   }
 
+  if (sealMode && !sealKeyFile) {
+    throw new Error("phoenix-secrets sealMode requires sealKeyFile (or PHOENIX_SEAL_KEY)");
+  }
+
   if (defaultNamespace?.includes(":")) {
     throw new Error("phoenix-secrets defaultNamespace must be a namespace name, not a URI");
   }
@@ -160,6 +175,7 @@ export function resolvePhoenixPluginConfig(
     server: parsedUrl.toString().replace(/\/$/, ""),
     ...(token ? { token } : {}),
     ...(tokenFile ? { tokenFile } : {}),
+    ...(sealKeyFile ? { sealKeyFile } : {}),
     ...(caCert ? { caCert } : {}),
     ...(clientCert ? { clientCert } : {}),
     ...(clientKey ? { clientKey } : {}),
