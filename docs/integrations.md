@@ -13,7 +13,7 @@ Use the plugin path when you want:
 - runtime resolution
 - Phoenix ACL/attestation on every request
 - sealed responses
-- better future compatibility with per-agent or per-subagent controls
+- plugin-side per-agent identity selection from trusted OpenClaw runtime context
 
 ### Exec provider note
 

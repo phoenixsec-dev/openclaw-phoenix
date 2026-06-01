@@ -14,7 +14,7 @@ This folder shows two patterns:
 These examples intentionally use environment variables and mounted files only.
 Do not commit real tokens, certificates, or seal private keys.
 
-Because `openclaw.jsonc` enables sealed mode, create/register a persistent Phoenix seal key first, set `PHOENIX_SEAL_KEY_HOST` to that host file, and keep it private (for example, `chmod 600 ./openclaw-agent.seal.key`). The compose files mount it read-only at `PHOENIX_SEAL_KEY` inside the gateway container.
+Because `openclaw.jsonc` enables sealed mode and per-agent identities, create/register a Phoenix token file and seal key file for each mapped agent (`main`, `kit`, `phoenix`, `echo`, `relay`). Set the matching `PHOENIX_TOKEN_FILE_*_HOST` and `PHOENIX_SEAL_KEY_*_HOST` values, and keep seal keys private (for example, `chmod 600 ./keys/echo.seal.key`). The compose files mount all token/seal-key files read-only inside the gateway container.
 
 ## Files
 
@@ -26,8 +26,9 @@ Because `openclaw.jsonc` enables sealed mode, create/register a persistent Phoen
 ## Notes
 
 - The plugin path talks to Phoenix over HTTP(S) directly.
-- The gateway only needs the minimum Phoenix auth material and its own seal private key.
-- `openclaw phoenix verify` validates local seal-key loading and sends the derived public key on dry-run requests, but live Phoenix use still requires server-side public-key registration.
+- The gateway only needs the minimum Phoenix auth material and per-agent seal private keys.
+- Single-identity config is diagnostic/dev only and is not a per-agent trust boundary.
+- `openclaw phoenix verify` is a diagnostic shared-identity helper; validate live per-agent access with tool calls from each mapped agent.
 
 
 Important: the included `openclaw.jsonc` enables the plugin only. It intentionally does not use raw `phoenix://...` strings in built-in OpenClaw env settings.

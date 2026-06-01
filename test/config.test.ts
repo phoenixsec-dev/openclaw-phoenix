@@ -77,6 +77,133 @@ test("resolvePhoenixPluginConfig accepts tokenFile auth", () => {
   assert.equal(config.sealMode, false);
 });
 
+test("resolvePhoenixPluginConfig accepts per-agent identity mappings without top-level auth", () => {
+  const config = resolvePhoenixPluginConfig(
+    {
+      server: "https://phoenix.internal:9090/",
+      caCert: "./ca.crt",
+      sealMode: true,
+      agents: {
+        main: {
+          tokenFile: "./main.token",
+          sealKeyFile: "./main.seal.key",
+          defaultNamespace: "openclaw-main",
+        },
+        kit: {
+          server: "https://phoenix-kit.internal:9090/",
+          tokenFile: "./kit.token",
+          sealKeyFile: "./kit.seal.key",
+          defaultNamespace: "openclaw-kit",
+          caCert: "./kit-ca.crt",
+        },
+      },
+    },
+    {
+      env: {},
+      resolvePath: (input) => `/resolved/${input}`,
+    },
+  );
+
+  assert.equal(config.server, "https://phoenix.internal:9090");
+  assert.equal(config.caCert, "/resolved/./ca.crt");
+  assert.equal(config.sealMode, true);
+  assert.equal(config.agents?.main?.tokenFile, "/resolved/./main.token");
+  assert.equal(config.agents?.main?.sealKeyFile, "/resolved/./main.seal.key");
+  assert.equal(config.agents?.main?.defaultNamespace, "openclaw-main");
+  assert.equal(config.agents?.kit?.server, "https://phoenix-kit.internal:9090");
+  assert.equal(config.agents?.kit?.caCert, "/resolved/./kit-ca.crt");
+});
+
+test("resolvePhoenixPluginConfig rejects unmapped/invalid agent ids", () => {
+  assert.throws(
+    () =>
+      resolvePhoenixPluginConfig(
+        {
+          server: "http://phoenix:9090",
+          sealMode: false,
+          agents: {
+            unknown: {
+              tokenFile: "./unknown.token",
+              defaultNamespace: "openclaw-unknown",
+            },
+          },
+        },
+        { env: {} },
+      ),
+    /not a supported OpenClaw agent id/,
+  );
+});
+
+test("resolvePhoenixPluginConfig rejects duplicate per-agent token files and seal keys", () => {
+  assert.throws(
+    () =>
+      resolvePhoenixPluginConfig(
+        {
+          server: "http://phoenix:9090",
+          sealMode: true,
+          agents: {
+            main: {
+              tokenFile: "./shared.token",
+              sealKeyFile: "./main.seal.key",
+              defaultNamespace: "openclaw-main",
+            },
+            kit: {
+              tokenFile: "./shared.token",
+              sealKeyFile: "./kit.seal.key",
+              defaultNamespace: "openclaw-kit",
+            },
+          },
+        },
+        { env: {}, resolvePath: (input) => `/resolved/${input}` },
+      ),
+    /tokenFile must be unique/,
+  );
+
+  assert.throws(
+    () =>
+      resolvePhoenixPluginConfig(
+        {
+          server: "http://phoenix:9090",
+          sealMode: true,
+          agents: {
+            main: {
+              tokenFile: "./main.token",
+              sealKeyFile: "./shared.seal.key",
+              defaultNamespace: "openclaw-main",
+            },
+            kit: {
+              tokenFile: "./kit.token",
+              sealKeyFile: "./shared.seal.key",
+              defaultNamespace: "openclaw-kit",
+            },
+          },
+        },
+        { env: {}, resolvePath: (input) => `/resolved/${input}` },
+      ),
+    /sealKeyFile must be unique/,
+  );
+});
+
+test("resolvePhoenixPluginConfig requires per-agent seal keys when inherited sealed mode is enabled", () => {
+  assert.throws(
+    () =>
+      resolvePhoenixPluginConfig(
+        {
+          server: "http://phoenix:9090",
+          sealMode: true,
+          agents: {
+            main: {
+              tokenFile: "./main.token",
+              defaultNamespace: "openclaw-main",
+            },
+          },
+        },
+        { env: {} },
+      ),
+    /agents\.main\.sealKeyFile is required/,
+  );
+});
+
 test("resolvePhoenixPluginConfig requires a persistent seal key file in sealed mode", () => {
   assert.throws(
     () =>
@@ -101,6 +228,6 @@ test("resolvePhoenixPluginConfig rejects missing auth", () => {
         },
         { env: {} },
       ),
-    /requires token auth, tokenFile auth, or both clientCert and clientKey/,
+    /requires token auth, tokenFile auth, per-agent agents config, or both clientCert and clientKey/,
   );
 });

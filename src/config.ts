@@ -1,4 +1,8 @@
-export type PhoenixPluginConfig = {
+export const PHOENIX_OPENCLAW_AGENT_IDS = ["main", "kit", "phoenix", "echo", "relay"] as const;
+
+export type PhoenixOpenClawAgentId = (typeof PHOENIX_OPENCLAW_AGENT_IDS)[number];
+
+export type PhoenixClientConfig = {
   server: string;
   token?: string;
   tokenFile?: string;
@@ -8,6 +12,21 @@ export type PhoenixPluginConfig = {
   clientKey?: string;
   defaultNamespace?: string;
   sealMode: boolean;
+};
+
+export type PhoenixAgentIdentityConfig = {
+  server?: string;
+  tokenFile: string;
+  sealKeyFile?: string;
+  caCert?: string;
+  clientCert?: string;
+  clientKey?: string;
+  defaultNamespace: string;
+  sealMode?: boolean;
+};
+
+export type PhoenixPluginConfig = PhoenixClientConfig & {
+  agents?: Partial<Record<PhoenixOpenClawAgentId, PhoenixAgentIdentityConfig>>;
 };
 
 type ResolvePhoenixPluginConfigOptions = {
@@ -20,6 +39,23 @@ type PluginConfigValidation =
   | { ok: false; errors: string[] };
 
 const TRUE_VALUES = new Set(["1", "true", "yes", "on"]);
+const PHOENIX_OPENCLAW_AGENT_ID_SET = new Set<string>(PHOENIX_OPENCLAW_AGENT_IDS);
+
+const phoenixAgentIdentityConfigJsonSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["tokenFile", "defaultNamespace"],
+  properties: {
+    server: { type: "string" },
+    tokenFile: { type: "string" },
+    sealKeyFile: { type: "string" },
+    caCert: { type: "string" },
+    clientCert: { type: "string" },
+    clientKey: { type: "string" },
+    defaultNamespace: { type: "string" },
+    sealMode: { type: "boolean" },
+  },
+};
 
 export const phoenixPluginConfigJsonSchema = {
   type: "object",
@@ -34,51 +70,63 @@ export const phoenixPluginConfigJsonSchema = {
     clientKey: { type: "string" },
     defaultNamespace: { type: "string" },
     sealMode: { type: "boolean" },
+    agents: {
+      type: "object",
+      additionalProperties: false,
+      minProperties: 1,
+      properties: Object.fromEntries(
+        PHOENIX_OPENCLAW_AGENT_IDS.map((agentId) => [agentId, phoenixAgentIdentityConfigJsonSchema]),
+      ),
+    },
   },
 };
 
 export const phoenixPluginConfigUiHints = {
   server: {
     label: "Phoenix Server URL",
-    help: "Phoenix base URL (fallback: PHOENIX_SERVER).",
+    help: "Phoenix base URL (fallback: PHOENIX_SERVER). Shared by per-agent identities unless an agent overrides it.",
     placeholder: "https://phoenix:9090",
   },
   token: {
     label: "Phoenix Token",
-    help: "Bearer token for Phoenix (fallback: PHOENIX_TOKEN).",
+    help: "Diagnostic/dev shared bearer token (fallback: PHOENIX_TOKEN). Not a per-agent trust boundary.",
     sensitive: true,
     placeholder: "phoenix_...",
   },
   tokenFile: {
     label: "Phoenix Token File",
-    help: "Path to a bearer token file (fallback: PHOENIX_TOKEN_FILE). Prefer this over embedding token values in config.",
+    help: "Diagnostic/dev shared bearer token file (fallback: PHOENIX_TOKEN_FILE). Prefer agents.<id>.tokenFile for trusted per-agent use.",
     sensitive: true,
   },
   sealKeyFile: {
     label: "Phoenix Seal Key File",
-    help: "Path to the agent's persistent X25519 seal private key file (fallback: PHOENIX_SEAL_KEY). Required when sealMode is enabled; keep permissions at 0600.",
+    help: "Diagnostic/dev shared seal private key file (fallback: PHOENIX_SEAL_KEY). Prefer agents.<id>.sealKeyFile for trusted per-agent use.",
     sensitive: true,
   },
   caCert: {
     label: "CA Certificate Path",
-    help: "Optional CA certificate path for custom TLS trust (fallback: PHOENIX_CA_CERT).",
+    help: "Optional CA certificate path for custom TLS trust (fallback: PHOENIX_CA_CERT). Shared by per-agent identities unless overridden.",
   },
   clientCert: {
     label: "Client Certificate Path",
-    help: "Optional client certificate path for mTLS (fallback: PHOENIX_CLIENT_CERT).",
+    help: "Optional client certificate path for mTLS (fallback: PHOENIX_CLIENT_CERT). Shared by per-agent identities unless overridden.",
   },
   clientKey: {
     label: "Client Key Path",
-    help: "Optional client key path for mTLS (fallback: PHOENIX_CLIENT_KEY).",
+    help: "Optional client key path for mTLS (fallback: PHOENIX_CLIENT_KEY). Shared by per-agent identities unless overridden.",
     sensitive: true,
   },
   defaultNamespace: {
     label: "Default Namespace",
-    help: "Namespace used when callers pass bare secret ids instead of full phoenix:// refs.",
+    help: "Diagnostic/dev namespace for single-identity mode. In per-agent mode use agents.<id>.defaultNamespace.",
   },
   sealMode: {
     label: "Sealed Mode",
-    help: "Return opaque PHOENIX_SEALED tokens instead of plaintext values.",
+    help: "Return opaque PHOENIX_SEALED tokens instead of plaintext values. Per-agent identities inherit this unless they override sealMode.",
+  },
+  agents: {
+    label: "Per-Agent Phoenix Identities",
+    help: "Map trusted OpenClaw ctx.agentId values (main, kit, phoenix, echo, relay) to tokenFile, sealKeyFile, and defaultNamespace. Tool args cannot select identity.",
   },
 };
 
@@ -105,6 +153,116 @@ function resolveMaybePath(
   return value ? resolvePath(value) : undefined;
 }
 
+function normalizePhoenixServer(server: string, label: string): string {
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(server);
+  } catch {
+    throw new Error(`${label} must be a valid URL: ${server}`);
+  }
+  if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+    throw new Error(`${label} must use http:// or https://: ${server}`);
+  }
+  return parsedUrl.toString().replace(/\/$/, "");
+}
+
+function validateDefaultNamespace(defaultNamespace: string, label: string): void {
+  if (defaultNamespace.includes(":")) {
+    throw new Error(`${label} must be a namespace name, not a URI`);
+  }
+}
+
+function readAgentIdentityMappings(
+  value: unknown,
+  options: { inheritedSealMode: boolean; resolvePath: (input: string) => string },
+): PhoenixPluginConfig["agents"] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!isRecord(value)) {
+    throw new Error("phoenix-secrets agents must be an object mapping OpenClaw agent ids to Phoenix identities");
+  }
+
+  const entries = Object.entries(value);
+  if (entries.length === 0) {
+    throw new Error("phoenix-secrets agents must configure at least one OpenClaw agent identity");
+  }
+
+  const agents: Partial<Record<PhoenixOpenClawAgentId, PhoenixAgentIdentityConfig>> = {};
+  const tokenFileOwners = new Map<string, string>();
+  const sealKeyFileOwners = new Map<string, string>();
+  for (const [agentId, rawAgent] of entries) {
+    if (!PHOENIX_OPENCLAW_AGENT_ID_SET.has(agentId)) {
+      throw new Error(
+        `phoenix-secrets agents.${agentId} is not a supported OpenClaw agent id; expected one of ${PHOENIX_OPENCLAW_AGENT_IDS.join(", ")}`,
+      );
+    }
+    if (!isRecord(rawAgent)) {
+      throw new Error(`phoenix-secrets agents.${agentId} must be an object`);
+    }
+
+    const tokenFile = resolveMaybePath(readString(rawAgent.tokenFile), options.resolvePath);
+    if (!tokenFile) {
+      throw new Error(`phoenix-secrets agents.${agentId}.tokenFile is required`);
+    }
+    const existingTokenFileOwner = tokenFileOwners.get(tokenFile);
+    if (existingTokenFileOwner) {
+      throw new Error(
+        `phoenix-secrets agents.${agentId}.tokenFile must be unique; already used by agents.${existingTokenFileOwner}`,
+      );
+    }
+    tokenFileOwners.set(tokenFile, agentId);
+
+    const defaultNamespace = readString(rawAgent.defaultNamespace);
+    if (!defaultNamespace) {
+      throw new Error(`phoenix-secrets agents.${agentId}.defaultNamespace is required`);
+    }
+    validateDefaultNamespace(defaultNamespace, `phoenix-secrets agents.${agentId}.defaultNamespace`);
+
+    const explicitSealMode = readBoolean(rawAgent.sealMode);
+    const effectiveSealMode = explicitSealMode ?? options.inheritedSealMode;
+    const sealKeyFile = resolveMaybePath(readString(rawAgent.sealKeyFile), options.resolvePath);
+    if (effectiveSealMode && !sealKeyFile) {
+      throw new Error(
+        `phoenix-secrets agents.${agentId}.sealKeyFile is required when effective sealMode is true`,
+      );
+    }
+    if (sealKeyFile) {
+      const existingSealKeyFileOwner = sealKeyFileOwners.get(sealKeyFile);
+      if (existingSealKeyFileOwner) {
+        throw new Error(
+          `phoenix-secrets agents.${agentId}.sealKeyFile must be unique; already used by agents.${existingSealKeyFileOwner}`,
+        );
+      }
+      sealKeyFileOwners.set(sealKeyFile, agentId);
+    }
+
+    const rawServer = readString(rawAgent.server);
+    const server = rawServer
+      ? normalizePhoenixServer(rawServer, `phoenix-secrets agents.${agentId}.server`)
+      : undefined;
+    const caCert = resolveMaybePath(readString(rawAgent.caCert), options.resolvePath);
+    const clientCert = resolveMaybePath(readString(rawAgent.clientCert), options.resolvePath);
+    const clientKey = resolveMaybePath(readString(rawAgent.clientKey), options.resolvePath);
+    if ((clientCert && !clientKey) || (!clientCert && clientKey)) {
+      throw new Error(`phoenix-secrets agents.${agentId} mTLS override requires both clientCert and clientKey`);
+    }
+
+    agents[agentId as PhoenixOpenClawAgentId] = {
+      tokenFile,
+      defaultNamespace,
+      ...(sealKeyFile ? { sealKeyFile } : {}),
+      ...(server ? { server } : {}),
+      ...(caCert ? { caCert } : {}),
+      ...(clientCert ? { clientCert } : {}),
+      ...(clientKey ? { clientKey } : {}),
+      ...(explicitSealMode !== undefined ? { sealMode: explicitSealMode } : {}),
+    };
+  }
+
+  return agents;
+}
+
 export function resolvePhoenixPluginConfig(
   value: unknown,
   options: ResolvePhoenixPluginConfigOptions = {},
@@ -113,20 +271,11 @@ export function resolvePhoenixPluginConfig(
   const resolvePath = options.resolvePath ?? ((input: string) => input);
   const raw = isRecord(value) ? value : {};
 
-  const server = readString(raw.server) ?? readString(env.PHOENIX_SERVER);
-  if (!server) {
+  const rawServer = readString(raw.server) ?? readString(env.PHOENIX_SERVER);
+  if (!rawServer) {
     throw new Error("phoenix-secrets config requires server (or PHOENIX_SERVER)");
   }
-
-  let parsedUrl: URL;
-  try {
-    parsedUrl = new URL(server);
-  } catch {
-    throw new Error(`phoenix-secrets server must be a valid URL: ${server}`);
-  }
-  if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
-    throw new Error(`phoenix-secrets server must use http:// or https://: ${server}`);
-  }
+  const server = normalizePhoenixServer(rawServer, "phoenix-secrets server");
 
   const token = readString(raw.token) ?? readString(env.PHOENIX_TOKEN);
   const tokenFile = resolveMaybePath(
@@ -152,10 +301,12 @@ export function resolvePhoenixPluginConfig(
   const explicitSealMode = readBoolean(raw.sealMode);
   const sealMode =
     explicitSealMode ?? TRUE_VALUES.has((env.PHOENIX_SEAL_MODE ?? "").trim().toLowerCase());
+  const agents = readAgentIdentityMappings(raw.agents, { inheritedSealMode: sealMode, resolvePath });
+  const hasAgentMappings = Boolean(agents && Object.keys(agents).length > 0);
 
-  if (!token && !tokenFile && !(clientCert && clientKey)) {
+  if (!hasAgentMappings && !token && !tokenFile && !(clientCert && clientKey)) {
     throw new Error(
-      "phoenix-secrets config requires token auth, tokenFile auth, or both clientCert and clientKey for mTLS",
+      "phoenix-secrets config requires token auth, tokenFile auth, per-agent agents config, or both clientCert and clientKey for mTLS",
     );
   }
 
@@ -163,16 +314,16 @@ export function resolvePhoenixPluginConfig(
     throw new Error("phoenix-secrets mTLS requires both clientCert and clientKey");
   }
 
-  if (sealMode && !sealKeyFile) {
+  if (!hasAgentMappings && sealMode && !sealKeyFile) {
     throw new Error("phoenix-secrets sealMode requires sealKeyFile (or PHOENIX_SEAL_KEY)");
   }
 
-  if (defaultNamespace?.includes(":")) {
-    throw new Error("phoenix-secrets defaultNamespace must be a namespace name, not a URI");
+  if (defaultNamespace) {
+    validateDefaultNamespace(defaultNamespace, "phoenix-secrets defaultNamespace");
   }
 
   return {
-    server: parsedUrl.toString().replace(/\/$/, ""),
+    server,
     ...(token ? { token } : {}),
     ...(tokenFile ? { tokenFile } : {}),
     ...(sealKeyFile ? { sealKeyFile } : {}),
@@ -181,6 +332,7 @@ export function resolvePhoenixPluginConfig(
     ...(clientKey ? { clientKey } : {}),
     ...(defaultNamespace ? { defaultNamespace } : {}),
     sealMode,
+    ...(agents ? { agents } : {}),
   };
 }
 

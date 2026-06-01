@@ -11,6 +11,8 @@ import { verifyPhoenixRefsInConfig } from "../src/cli.ts";
 
 const TEST_SEAL_PRIVATE_KEY = "dwdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LCo=";
 const TEST_SEAL_PUBLIC_KEY = "hSDwCYkwp1R0i33ctD73Wg2/Og0mOBr066SpjqqbTmo=";
+const TEST_SEAL_PRIVATE_KEY_B = "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=";
+const TEST_SEAL_PUBLIC_KEY_B = "zo060cy2M+x7cMF4FKXHbs0CloUFDTRHRboFhw5YfVk=";
 
 async function withServer(
   handler: Parameters<typeof http.createServer>[0],
@@ -41,6 +43,45 @@ async function withSealKeyFile(run: (sealKeyFile: string) => Promise<void>) {
     await fs.unlink(sealKeyFile).catch(() => undefined);
     await fs.rmdir(dir).catch(() => undefined);
   }
+}
+
+async function withAgentIdentityFiles(
+  run: (files: {
+    mainTokenFile: string;
+    mainSealKeyFile: string;
+    kitTokenFile: string;
+    kitSealKeyFile: string;
+  }) => Promise<void>,
+) {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-phoenix-agent-identity-test-"));
+  const files = {
+    mainTokenFile: path.join(dir, "main.token"),
+    mainSealKeyFile: path.join(dir, "main.seal.key"),
+    kitTokenFile: path.join(dir, "kit.token"),
+    kitSealKeyFile: path.join(dir, "kit.seal.key"),
+  };
+  await fs.writeFile(files.mainTokenFile, "main-token\n", "utf8");
+  await fs.writeFile(files.kitTokenFile, "kit-token\n", "utf8");
+  await fs.writeFile(files.mainSealKeyFile, `${TEST_SEAL_PRIVATE_KEY}\n`, { encoding: "utf8", mode: 0o600 });
+  await fs.writeFile(files.kitSealKeyFile, `${TEST_SEAL_PRIVATE_KEY_B}\n`, { encoding: "utf8", mode: 0o600 });
+  try {
+    await run(files);
+  } finally {
+    await fs.unlink(files.mainTokenFile).catch(() => undefined);
+    await fs.unlink(files.kitTokenFile).catch(() => undefined);
+    await fs.unlink(files.mainSealKeyFile).catch(() => undefined);
+    await fs.unlink(files.kitSealKeyFile).catch(() => undefined);
+    await fs.rmdir(dir).catch(() => undefined);
+  }
+}
+
+async function readRequestJson(req: http.IncomingMessage): Promise<Record<string, unknown>> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  const text = Buffer.concat(chunks).toString("utf8");
+  return text.trim() ? JSON.parse(text) : {};
 }
 
 test("tool handlers return structured success payloads", async () => {
@@ -129,6 +170,136 @@ test("resolve tool keeps sealed output opaque and excludes plaintext values", as
   });
 });
 
+test("per-agent identity is selected from runtime context only and keeps sealed output opaque", async () => {
+  await withAgentIdentityFiles(async (files) => {
+    const seenRequests: Array<{
+      authorization?: string;
+      sealKey?: string;
+      agent?: string;
+      refs: unknown;
+    }> = [];
+
+    await withServer(async (req, res) => {
+      const body = await readRequestJson(req);
+      const refs = Array.isArray(body.refs) ? body.refs : [];
+      const ref = typeof refs[0] === "string" ? refs[0] : "phoenix://unknown/key";
+      seenRequests.push({
+        authorization: typeof req.headers.authorization === "string" ? req.headers.authorization : undefined,
+        sealKey: typeof req.headers["x-phoenix-seal-key"] === "string" ? req.headers["x-phoenix-seal-key"] : undefined,
+        agent: typeof req.headers["x-openclaw-agent"] === "string" ? req.headers["x-openclaw-agent"] : undefined,
+        refs,
+      });
+
+      res.setHeader("content-type", "application/json");
+      res.end(
+        JSON.stringify({
+          values: {
+            [ref]: "plain-secret-that-must-not-appear",
+          },
+          sealed_values: {
+            [ref]: {
+              version: 1,
+              algorithm: "x25519-xsalsa20-poly1305",
+              path: ref.replace(/^phoenix:\/\//, ""),
+              ref,
+              ephemeral_key: "abc",
+              nonce: "def",
+              ciphertext: "ghi",
+            },
+          },
+        }),
+      );
+    }, async (baseUrl) => {
+      const config = {
+        server: baseUrl,
+        token: "root-token-that-must-not-be-used",
+        defaultNamespace: "root-ns-that-must-not-be-used",
+        sealMode: true,
+        agents: {
+          main: {
+            tokenFile: files.mainTokenFile,
+            sealKeyFile: files.mainSealKeyFile,
+            defaultNamespace: "main-ns",
+          },
+          kit: {
+            tokenFile: files.kitTokenFile,
+            sealKeyFile: files.kitSealKeyFile,
+            defaultNamespace: "kit-ns",
+          },
+        },
+      };
+
+      const mainTool = createPhoenixResolveTool(config, { agentId: "main" });
+      const mainResult = await mainTool.execute("tool-main", {
+        refs: ["key"],
+        agentId: "kit",
+        identity: "kit",
+        tokenFile: files.kitTokenFile,
+      });
+      const kitTool = createPhoenixResolveTool(config, { agentId: "kit" });
+      const kitResult = await kitTool.execute("tool-kit", {
+        refs: ["key"],
+        agentId: "main",
+        identity: "main",
+        tokenFile: files.mainTokenFile,
+      });
+
+      for (const result of [mainResult, kitResult]) {
+        const text = result.content.map((entry) => entry.text).join("\n");
+        const serializedDetails = JSON.stringify(result.details);
+        assert.match(text, /PHOENIX_SEALED:/);
+        assert.doesNotMatch(text, /plain-secret-that-must-not-appear|main-token|kit-token|root-token-that-must-not-be-used/);
+        assert.doesNotMatch(serializedDetails, /plain-secret-that-must-not-appear|main-token|kit-token|root-token-that-must-not-be-used/);
+      }
+    });
+
+    assert.equal(seenRequests.length, 2);
+    assert.deepEqual(seenRequests.map((request) => request.authorization), [
+      "Bearer main-token",
+      "Bearer kit-token",
+    ]);
+    assert.deepEqual(seenRequests.map((request) => request.sealKey), [
+      TEST_SEAL_PUBLIC_KEY,
+      TEST_SEAL_PUBLIC_KEY_B,
+    ]);
+    assert.deepEqual(seenRequests.map((request) => request.agent), ["main", "kit"]);
+    assert.deepEqual(seenRequests.map((request) => request.refs), [
+      ["phoenix://main-ns/key"],
+      ["phoenix://kit-ns/key"],
+    ]);
+  });
+});
+
+test("per-agent mapping fails closed for unknown or unmapped runtime agents", async () => {
+  const resolveTool = createPhoenixResolveTool(
+    {
+      server: "http://127.0.0.1:1",
+      sealMode: false,
+      agents: {
+        main: {
+          tokenFile: "/tmp/openclaw-phoenix-main-token-not-read",
+          defaultNamespace: "main-ns",
+        },
+      },
+    },
+    { agentId: "unknown" },
+  );
+
+  const result = await resolveTool.execute("tool-unknown", { refs: ["key"], agentId: "main" });
+  const details = result.details as {
+    ok: boolean;
+    error: { type?: string; code?: string; remediation?: string; detail?: string };
+  };
+  const text = result.content.map((entry) => entry.text).join("\n");
+
+  assert.equal(details.ok, false);
+  assert.equal(details.error.type, "access_denied");
+  assert.equal(details.error.code, "OPENCLAW_AGENT_IDENTITY_UNMAPPED");
+  assert.match(details.error.remediation ?? "", /config\.agents\.<agentId>/);
+  assert.match(details.error.detail ?? "", /No mapping exists/);
+  assert.doesNotMatch(text, /openclaw-phoenix-main-token-not-read/);
+});
+
 test("tool handlers return structured remediation errors", async () => {
   await withServer(async (_req, res) => {
     res.statusCode = 403;
@@ -196,6 +367,82 @@ test("verifyPhoenixRefsInConfig scans config and dry-runs all refs", async () =>
       assert.equal(report.failCount, 1);
     });
   });
+});
+
+test("verifyPhoenixRefsInConfig rejects agents-only config without diagnostic identity", async () => {
+  await assert.rejects(
+    () =>
+      verifyPhoenixRefsInConfig(
+        {
+          env: {
+            SECRET: "phoenix://openclaw/key",
+          },
+        },
+        {
+          server: "http://127.0.0.1:1",
+          sealMode: true,
+          agents: {
+            main: {
+              tokenFile: "/tmp/openclaw-phoenix-main-token-not-read",
+              sealKeyFile: "/tmp/openclaw-phoenix-main-seal-key-not-read",
+              defaultNamespace: "main-ns",
+            },
+          },
+        },
+      ),
+    /top-level diagnostic Phoenix identity/,
+  );
+});
+
+test("runPhoenixStartupCheck rejects duplicate per-agent token or seal key material", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-phoenix-duplicate-identity-test-"));
+  const files = {
+    mainTokenFile: path.join(dir, "main.token"),
+    kitTokenFile: path.join(dir, "kit.token"),
+    mainSealKeyFile: path.join(dir, "main.seal.key"),
+    kitSealKeyFile: path.join(dir, "kit.seal.key"),
+  };
+  await fs.writeFile(files.mainTokenFile, "same-token\n", "utf8");
+  await fs.writeFile(files.kitTokenFile, "same-token\n", "utf8");
+  await fs.writeFile(files.mainSealKeyFile, `${TEST_SEAL_PRIVATE_KEY}\n`, { encoding: "utf8", mode: 0o600 });
+  await fs.writeFile(files.kitSealKeyFile, `${TEST_SEAL_PRIVATE_KEY_B}\n`, { encoding: "utf8", mode: 0o600 });
+
+  const config = {
+    server: "http://127.0.0.1:1",
+    sealMode: true,
+    agents: {
+      main: {
+        tokenFile: files.mainTokenFile,
+        sealKeyFile: files.mainSealKeyFile,
+        defaultNamespace: "main-ns",
+      },
+      kit: {
+        tokenFile: files.kitTokenFile,
+        sealKeyFile: files.kitSealKeyFile,
+        defaultNamespace: "kit-ns",
+      },
+    },
+  };
+
+  try {
+    await assert.rejects(
+      () => runPhoenixStartupCheck(config),
+      /token material must be unique/,
+    );
+
+    await fs.writeFile(files.kitTokenFile, "kit-token\n", "utf8");
+    await fs.writeFile(files.kitSealKeyFile, `${TEST_SEAL_PRIVATE_KEY}\n`, { encoding: "utf8", mode: 0o600 });
+    await assert.rejects(
+      () => runPhoenixStartupCheck(config),
+      /seal key material must be unique/,
+    );
+  } finally {
+    await fs.unlink(files.mainTokenFile).catch(() => undefined);
+    await fs.unlink(files.kitTokenFile).catch(() => undefined);
+    await fs.unlink(files.mainSealKeyFile).catch(() => undefined);
+    await fs.unlink(files.kitSealKeyFile).catch(() => undefined);
+    await fs.rmdir(dir).catch(() => undefined);
+  }
 });
 
 test("runPhoenixStartupCheck validates seal key config before health", async () => {

@@ -10,17 +10,15 @@ openclaw plugins install ./path/to/openclaw-phoenix -l
 
 ## Verify
 
-```bash
-openclaw phoenix verify
-```
+`openclaw phoenix verify` is a diagnostic shared-identity command. This per-agent example is meant to be validated through live tool calls from each mapped OpenClaw agent (`main`, `kit`, `phoenix`, `echo`, `relay`).
 
 ## Files
 
 - `openclaw.jsonc` — plugin enablement and sample `phoenix://` refs
 - `.env.example` — environment variables to provide to the gateway process
 
-## Sealed mode key
+## Per-agent identity and sealed keys
 
-This example enables `sealMode`, so `PHOENIX_SEAL_KEY` must point to a persistent Phoenix seal private key file. Generate/register the key with Phoenix first, keep the private key local, and lock it down (for example, `chmod 600 /path/to/openclaw-agent.seal.key`).
+This example enables `sealMode` and configures `agents.<id>.tokenFile` plus `agents.<id>.sealKeyFile` for each trusted OpenClaw agent id. Generate/register a separate Phoenix token and seal key for every mapped agent, keep private files local, and lock seal keys down (for example, `chmod 600 /path/to/echo.seal.key`).
 
-Important: this example does not put `phoenix://...` strings into built-in OpenClaw env fields, because the current plugin does not implement built-in SecretRef resolution.
+Important: this example does not put `phoenix://...` strings into built-in OpenClaw env fields, because the current plugin does not implement built-in SecretRef resolution. Single-identity config is diagnostic/dev only and is not a per-agent trust boundary.

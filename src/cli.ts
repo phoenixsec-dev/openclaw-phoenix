@@ -1,5 +1,6 @@
 import type { PhoenixPluginConfig } from "./config.ts";
 import { PhoenixClient, formatPhoenixError } from "./client.ts";
+import { hasPhoenixAgentMappings } from "./identity.ts";
 import { extractPhoenixRefs } from "./refs.ts";
 
 export type PhoenixVerifyResult = {
@@ -21,6 +22,17 @@ export async function verifyPhoenixRefsInConfig(
   pluginConfig: PhoenixPluginConfig,
 ): Promise<PhoenixVerifyResult> {
   const refs = [...extractPhoenixRefs(configSnapshot)].sort((left, right) => left.localeCompare(right));
+  if (
+    hasPhoenixAgentMappings(pluginConfig) &&
+    !pluginConfig.token &&
+    !pluginConfig.tokenFile &&
+    !(pluginConfig.clientCert && pluginConfig.clientKey)
+  ) {
+    throw new Error(
+      "openclaw phoenix verify requires a top-level diagnostic Phoenix identity when per-agent mappings are enabled; runtime agent identity comes from ctx.agentId and is not available to this CLI command",
+    );
+  }
+
   const client = new PhoenixClient(pluginConfig);
   await client.validateSealConfiguration();
 
