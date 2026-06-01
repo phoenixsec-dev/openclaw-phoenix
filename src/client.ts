@@ -187,9 +187,23 @@ function deriveSealPublicKey(privateKey: Buffer, source: string): Buffer {
   }
 }
 
-async function buildSealHeader(sealKeyFile: string): Promise<string> {
+async function loadSealPrivateKey(sealKeyFile: string): Promise<Buffer> {
+  const stat = await fs.stat(sealKeyFile);
+  if (!stat.isFile()) {
+    throw new Error(`Phoenix seal key path must be a file: ${sealKeyFile}`);
+  }
+  if ((stat.mode & 0o077) !== 0) {
+    throw new Error(
+      `Phoenix seal key file has insecure permissions: ${sealKeyFile} must not be readable, writable, or executable by group or others`,
+    );
+  }
+
   const rawPrivateKey = await fs.readFile(sealKeyFile, "utf8");
-  const privateKey = decodeSealPrivateKey(rawPrivateKey, sealKeyFile);
+  return decodeSealPrivateKey(rawPrivateKey, sealKeyFile);
+}
+
+async function buildSealHeader(sealKeyFile: string): Promise<string> {
+  const privateKey = await loadSealPrivateKey(sealKeyFile);
   const publicKey = deriveSealPublicKey(privateKey, sealKeyFile);
   return publicKey.toString("base64");
 }
@@ -338,6 +352,12 @@ export class PhoenixClient {
       this.sealHeaderPromise = buildSealHeader(this.config.sealKeyFile);
     }
     return this.sealHeaderPromise;
+  }
+
+  async validateSealConfiguration(): Promise<void> {
+    if (this.config.sealMode) {
+      await this.loadSealHeader();
+    }
   }
 
   private async requestJson(options: RequestOptions): Promise<JsonResponse> {
@@ -529,6 +549,11 @@ export class PhoenixClient {
 
   async status(options: { caller?: PhoenixCallerContext } = {}): Promise<PhoenixStatusResponse> {
     const notes: string[] = [];
+    await this.validateSealConfiguration();
+    if (this.config.sealMode) {
+      notes.push("Phoenix sealed mode is enabled and the configured seal key file loaded successfully.");
+    }
+
     const { health, peerCertificate } = await this.health({
       toolName: "phoenix_status",
       caller: options.caller,

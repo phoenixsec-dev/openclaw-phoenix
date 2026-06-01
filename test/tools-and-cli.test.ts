@@ -160,38 +160,55 @@ test("tool handlers return structured remediation errors", async () => {
 });
 
 test("verifyPhoenixRefsInConfig scans config and dry-runs all refs", async () => {
-  await withServer(async (req, res) => {
-    assert.equal(req.url, "/v1/resolve?dry_run=true");
-    res.setHeader("content-type", "application/json");
-    res.end(
-      JSON.stringify({
-        values: { "phoenix://openclaw/good": "ok" },
-        errors: { "phoenix://openclaw/missing": "secret not found" },
-      }),
-    );
-  }, async (baseUrl) => {
-    const report = await verifyPhoenixRefsInConfig(
-      {
-        agents: {
-          defaults: {
-            env: {
-              GOOD: "phoenix://openclaw/good",
-              MISSING: "phoenix://openclaw/missing",
+  await withSealKeyFile(async (sealKeyFile) => {
+    await withServer(async (req, res) => {
+      assert.equal(req.url, "/v1/resolve?dry_run=true");
+      assert.equal(req.headers["x-phoenix-seal-key"], TEST_SEAL_PUBLIC_KEY);
+      res.setHeader("content-type", "application/json");
+      res.end(
+        JSON.stringify({
+          values: { "phoenix://openclaw/good": "ok" },
+          errors: { "phoenix://openclaw/missing": "secret not found" },
+        }),
+      );
+    }, async (baseUrl) => {
+      const report = await verifyPhoenixRefsInConfig(
+        {
+          agents: {
+            defaults: {
+              env: {
+                GOOD: "phoenix://openclaw/good",
+                MISSING: "phoenix://openclaw/missing",
+              },
             },
           },
         },
-      },
-      {
-        server: baseUrl,
-        token: "token",
-        sealMode: false,
-      },
-    );
+        {
+          server: baseUrl,
+          token: "token",
+          sealKeyFile,
+          sealMode: true,
+        },
+      );
 
-    assert.deepEqual(report.refs, ["phoenix://openclaw/good", "phoenix://openclaw/missing"]);
-    assert.equal(report.okCount, 1);
-    assert.equal(report.failCount, 1);
+      assert.deepEqual(report.refs, ["phoenix://openclaw/good", "phoenix://openclaw/missing"]);
+      assert.equal(report.okCount, 1);
+      assert.equal(report.failCount, 1);
+    });
   });
+});
+
+test("runPhoenixStartupCheck validates seal key config before health", async () => {
+  await assert.rejects(
+    () =>
+      runPhoenixStartupCheck({
+        server: "http://127.0.0.1:1",
+        token: "token",
+        sealKeyFile: "/nonexistent/openclaw-phoenix-test.seal.key",
+        sealMode: true,
+      }),
+    /seal key/,
+  );
 });
 
 test("runPhoenixStartupCheck throws actionable connectivity errors", async () => {

@@ -21,6 +21,9 @@ export async function verifyPhoenixRefsInConfig(
   pluginConfig: PhoenixPluginConfig,
 ): Promise<PhoenixVerifyResult> {
   const refs = [...extractPhoenixRefs(configSnapshot)].sort((left, right) => left.localeCompare(right));
+  const client = new PhoenixClient(pluginConfig);
+  await client.validateSealConfiguration();
+
   if (refs.length === 0) {
     return {
       refs,
@@ -31,7 +34,6 @@ export async function verifyPhoenixRefsInConfig(
     };
   }
 
-  const client = new PhoenixClient({ ...pluginConfig, sealMode: false });
   const result = await client.resolve(refs, { dryRun: true });
   const okCount = Object.keys(result.values).length;
   const failCount = Object.keys(result.errors).length;

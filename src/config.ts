@@ -56,7 +56,7 @@ export const phoenixPluginConfigUiHints = {
   },
   sealKeyFile: {
     label: "Phoenix Seal Key File",
-    help: "Path to the agent's persistent X25519 seal private key file (fallback: PHOENIX_SEAL_KEY). Required when sealMode is enabled.",
+    help: "Path to the agent's persistent X25519 seal private key file (fallback: PHOENIX_SEAL_KEY). Required when sealMode is enabled; keep permissions at 0600.",
     sensitive: true,
   },
   caCert: {

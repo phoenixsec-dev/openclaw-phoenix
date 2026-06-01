@@ -124,6 +124,29 @@ test("PhoenixClient derives a stable seal key header from sealKeyFile", async ()
   assert.deepEqual(seenHeaders, [TEST_SEAL_PUBLIC_KEY, TEST_SEAL_PUBLIC_KEY]);
 });
 
+test("PhoenixClient rejects overly permissive seal key file permissions", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-phoenix-seal-test-"));
+  const sealKeyFile = path.join(dir, "agent.seal.key");
+  await fs.writeFile(sealKeyFile, `${TEST_SEAL_PRIVATE_KEY}\n`, "utf8");
+  await fs.chmod(sealKeyFile, 0o644);
+  try {
+    const client = new PhoenixClient({
+      server: "http://phoenix:9090",
+      token: "token",
+      sealKeyFile,
+      sealMode: true,
+    });
+
+    await assert.rejects(
+      () => client.validateSealConfiguration(),
+      /seal key file has insecure permissions/,
+    );
+  } finally {
+    await fs.unlink(sealKeyFile).catch(() => undefined);
+    await fs.rmdir(dir).catch(() => undefined);
+  }
+});
+
 test("PhoenixClient resolve returns opaque sealed tokens in sealMode", async () => {
   await withSealKeyFile(async (sealKeyFile) => {
     await withServer(async (req, res) => {

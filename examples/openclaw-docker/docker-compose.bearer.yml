@@ -18,7 +18,9 @@ services:
       PHOENIX_TOKEN: "${PHOENIX_TOKEN}"
       PHOENIX_DEFAULT_NAMESPACE: "${PHOENIX_DEFAULT_NAMESPACE}"
       PHOENIX_SEAL_MODE: "${PHOENIX_SEAL_MODE}"
+      PHOENIX_SEAL_KEY: "${PHOENIX_SEAL_KEY}"
     volumes:
       - ../../:/plugins/openclaw-phoenix:ro
       - ./openclaw.jsonc:/root/.openclaw/openclaw.jsonc:ro
+      - ${PHOENIX_SEAL_KEY_HOST}:${PHOENIX_SEAL_KEY}:ro
     restart: unless-stopped

@@ -17,12 +17,14 @@ services:
       PHOENIX_SERVER: "${PHOENIX_SERVER}"
       PHOENIX_DEFAULT_NAMESPACE: "${PHOENIX_DEFAULT_NAMESPACE}"
       PHOENIX_SEAL_MODE: "${PHOENIX_SEAL_MODE}"
+      PHOENIX_SEAL_KEY: "${PHOENIX_SEAL_KEY}"
       PHOENIX_CA_CERT: "/run/phoenix/ca.crt"
       PHOENIX_CLIENT_CERT: "/run/phoenix/client.crt"
       PHOENIX_CLIENT_KEY: "/run/phoenix/client.key"
     volumes:
       - ../../:/plugins/openclaw-phoenix:ro
       - ./openclaw.jsonc:/root/.openclaw/openclaw.jsonc:ro
+      - ${PHOENIX_SEAL_KEY_HOST}:${PHOENIX_SEAL_KEY}:ro
       - /path/to/phoenix-ca.crt:/run/phoenix/ca.crt:ro
       - /path/to/openclaw-client.crt:/run/phoenix/client.crt:ro
       - /path/to/openclaw-client.key:/run/phoenix/client.key:ro

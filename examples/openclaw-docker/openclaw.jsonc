@@ -10,7 +10,8 @@
         config: {
           server: "${PHOENIX_SERVER}",
           defaultNamespace: "${PHOENIX_DEFAULT_NAMESPACE}",
-          sealMode: true
+          sealMode: true,
+          sealKeyFile: "${PHOENIX_SEAL_KEY}"
         }
       }
     }
