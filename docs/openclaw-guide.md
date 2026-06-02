@@ -165,7 +165,7 @@ Config fields:
 - `server` — Phoenix base URL, inherited by per-agent mappings unless an agent overrides it
 - `sealMode` — when true, `phoenix_resolve` returns `PHOENIX_SEALED:` tokens; inherited by agents unless they override it
 - `agents` — mapping from trusted OpenClaw `ctx.agentId` values (`main`, `kit`, `phoenix`, `echo`, `relay`) to Phoenix identities
-- `agents.<id>.tokenFile` — required per-agent bearer token file; must be unique across mapped agents
+- `agents.<id>.tokenFile` — required per-agent bearer token file; must be unique across mapped agents and locked down with no group/other permissions
 - `agents.<id>.sealKeyFile` — required for that agent when effective `sealMode` is true; must be unique across mapped agents
 - `agents.<id>.defaultNamespace` — default namespace used when that agent passes bare ids like `api-key`
 - `agents.<id>.server`, `caCert`, `clientCert`, `clientKey`, `sealMode` — optional per-agent overrides
@@ -204,7 +204,7 @@ CT120 policy: keep rollout conservative. Do not deploy this plugin change to CT1
 
 Use this for simple local/dev setups and per-agent runtime identities.
 
-- for live tools, prefer `agents.<id>.tokenFile` pointing at an existing scoped token file for each mapped OpenClaw agent
+- for live tools, prefer `agents.<id>.tokenFile` pointing at an existing scoped token file for each mapped OpenClaw agent; use restrictive permissions such as `chmod 600 /path/to/echo.token`
 - top-level `tokenFile`/`PHOENIX_TOKEN_FILE` is diagnostic/dev only and does not provide per-agent isolation
 - if you inject `PHOENIX_TOKEN` directly, scope it narrowly and understand it becomes part of the gateway process environment
 - do **not** use a broad admin token as the normal gateway credential

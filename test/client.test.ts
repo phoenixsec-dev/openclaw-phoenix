@@ -79,7 +79,7 @@ test("PhoenixClient resolve sends tool headers and returns plaintext values", as
 test("PhoenixClient reads bearer auth from tokenFile", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-phoenix-test-"));
   const tokenFile = path.join(dir, "token");
-  await fs.writeFile(tokenFile, "file-token\n", "utf8");
+  await fs.writeFile(tokenFile, "file-token\n", { encoding: "utf8", mode: 0o600 });
   try {
     await withServer(async (req, res) => {
       assert.equal(req.headers.authorization, "Bearer file-token");
@@ -95,6 +95,28 @@ test("PhoenixClient reads bearer auth from tokenFile", async () => {
       const { health } = await client.health();
       assert.equal(health.status, "ok");
     });
+  } finally {
+    await fs.unlink(tokenFile).catch(() => undefined);
+    await fs.rmdir(dir).catch(() => undefined);
+  }
+});
+
+test("PhoenixClient rejects overly permissive token file permissions", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-phoenix-token-test-"));
+  const tokenFile = path.join(dir, "token");
+  await fs.writeFile(tokenFile, "file-token\n", "utf8");
+  await fs.chmod(tokenFile, 0o644);
+  try {
+    const client = new PhoenixClient({
+      server: "http://127.0.0.1:1",
+      tokenFile,
+      sealMode: false,
+    });
+
+    await assert.rejects(
+      () => client.health(),
+      /token file has insecure permissions/,
+    );
   } finally {
     await fs.unlink(tokenFile).catch(() => undefined);
     await fs.rmdir(dir).catch(() => undefined);

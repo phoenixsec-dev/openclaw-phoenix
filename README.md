@@ -120,6 +120,6 @@ npm test
 - `sealMode: true` returns opaque `PHOENIX_SEALED:` tokens instead of plaintext values and requires `agents.<id>.sealKeyFile` in per-agent mode or `sealKeyFile`/`PHOENIX_SEAL_KEY` in diagnostic single-identity mode.
 - Phoenix's current REST API does not expose a server version field, so `phoenix_status` reports that as unavailable instead of guessing.
 - No secrets or credentials are written to disk by this plugin.
-- `agents.<id>.tokenFile` reads an existing scoped bearer token for the trusted runtime `ctx.agentId`; operators do not need to paste token values into `openclaw.json` or `/etc/default/openclaw`.
+- `agents.<id>.tokenFile` reads an existing scoped bearer token for the trusted runtime `ctx.agentId`; operators do not need to paste token values into `openclaw.json` or `/etc/default/openclaw`. Keep token file permissions tight (`0600`); group/other bits are rejected.
 - `agents.<id>.sealKeyFile` reads an existing per-agent private seal key file; keep permissions tight (`0600`) and never commit it.
 - `X-OpenClaw-*` request headers are metadata/audit hints only. Phoenix identity is enforced by the selected token/seal key, not by trusting raw headers.

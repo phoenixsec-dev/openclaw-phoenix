@@ -5,6 +5,7 @@ import type { Socket } from "node:net";
 import type { PeerCertificate, TLSSocket } from "node:tls";
 import { normalizeListPrefix, normalizePhoenixRef } from "./refs.ts";
 import { buildSealHeader } from "./seal.ts";
+import { readPhoenixTokenFile } from "./token.ts";
 import type { PhoenixClientConfig } from "./config.ts";
 import { PhoenixIdentityError } from "./identity.ts";
 import type { PhoenixCallerContext } from "./tool-helpers.ts";
@@ -261,13 +262,7 @@ export class PhoenixClient {
       return undefined;
     }
     if (!this.tokenFilePromise) {
-      this.tokenFilePromise = fs.readFile(this.config.tokenFile, "utf8").then((raw) => {
-        const token = raw.trim();
-        if (!token) {
-          throw new Error(`Phoenix token file is empty: ${this.config.tokenFile}`);
-        }
-        return token;
-      });
+      this.tokenFilePromise = readPhoenixTokenFile(this.config.tokenFile);
     }
     return await this.tokenFilePromise;
   }

@@ -60,8 +60,8 @@ async function withAgentIdentityFiles(
     kitTokenFile: path.join(dir, "kit.token"),
     kitSealKeyFile: path.join(dir, "kit.seal.key"),
   };
-  await fs.writeFile(files.mainTokenFile, "main-token\n", "utf8");
-  await fs.writeFile(files.kitTokenFile, "kit-token\n", "utf8");
+  await fs.writeFile(files.mainTokenFile, "main-token\n", { encoding: "utf8", mode: 0o600 });
+  await fs.writeFile(files.kitTokenFile, "kit-token\n", { encoding: "utf8", mode: 0o600 });
   await fs.writeFile(files.mainSealKeyFile, `${TEST_SEAL_PRIVATE_KEY}\n`, { encoding: "utf8", mode: 0o600 });
   await fs.writeFile(files.kitSealKeyFile, `${TEST_SEAL_PRIVATE_KEY_B}\n`, { encoding: "utf8", mode: 0o600 });
   try {
@@ -394,6 +394,28 @@ test("verifyPhoenixRefsInConfig rejects agents-only config without diagnostic id
   );
 });
 
+test("runPhoenixStartupCheck reports per-agent token file path and permission errors clearly", async () => {
+  await assert.rejects(
+    () =>
+      runPhoenixStartupCheck({
+        server: "http://127.0.0.1:1",
+        sealMode: false,
+        agents: {
+          main: {
+            tokenFile: "/tmp/openclaw-phoenix-missing-token-for-startup-test",
+            defaultNamespace: "main-ns",
+          },
+        },
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /per-agent token and seal key file paths and permissions/);
+      assert.doesNotMatch(error.message, /distinct token and seal key material/);
+      return true;
+    },
+  );
+});
+
 test("runPhoenixStartupCheck rejects duplicate per-agent token or seal key material", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-phoenix-duplicate-identity-test-"));
   const files = {
@@ -402,8 +424,8 @@ test("runPhoenixStartupCheck rejects duplicate per-agent token or seal key mater
     mainSealKeyFile: path.join(dir, "main.seal.key"),
     kitSealKeyFile: path.join(dir, "kit.seal.key"),
   };
-  await fs.writeFile(files.mainTokenFile, "same-token\n", "utf8");
-  await fs.writeFile(files.kitTokenFile, "same-token\n", "utf8");
+  await fs.writeFile(files.mainTokenFile, "same-token\n", { encoding: "utf8", mode: 0o600 });
+  await fs.writeFile(files.kitTokenFile, "same-token\n", { encoding: "utf8", mode: 0o600 });
   await fs.writeFile(files.mainSealKeyFile, `${TEST_SEAL_PRIVATE_KEY}\n`, { encoding: "utf8", mode: 0o600 });
   await fs.writeFile(files.kitSealKeyFile, `${TEST_SEAL_PRIVATE_KEY_B}\n`, { encoding: "utf8", mode: 0o600 });
 
@@ -430,7 +452,7 @@ test("runPhoenixStartupCheck rejects duplicate per-agent token or seal key mater
       /token material must be unique/,
     );
 
-    await fs.writeFile(files.kitTokenFile, "kit-token\n", "utf8");
+    await fs.writeFile(files.kitTokenFile, "kit-token\n", { encoding: "utf8", mode: 0o600 });
     await fs.writeFile(files.kitSealKeyFile, `${TEST_SEAL_PRIVATE_KEY}\n`, { encoding: "utf8", mode: 0o600 });
     await assert.rejects(
       () => runPhoenixStartupCheck(config),

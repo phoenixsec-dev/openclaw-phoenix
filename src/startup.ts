@@ -1,7 +1,10 @@
 import type { PhoenixPluginConfig, PhoenixClientConfig } from "./config.ts";
 import { PhoenixClient, formatPhoenixError } from "./client.ts";
 import { getPhoenixAgentClientConfigs } from "./identity.ts";
-import { validatePhoenixAgentIdentityMaterialUniqueness } from "./identity-validation.ts";
+import {
+  PhoenixDuplicateIdentityMaterialError,
+  validatePhoenixAgentIdentityMaterialUniqueness,
+} from "./identity-validation.ts";
 
 async function runSinglePhoenixStartupCheck(params: {
   config: PhoenixClientConfig;
@@ -19,9 +22,15 @@ export async function runPhoenixStartupCheck(config: PhoenixPluginConfig): Promi
   try {
     await validatePhoenixAgentIdentityMaterialUniqueness(config);
   } catch (error) {
+    if (error instanceof PhoenixDuplicateIdentityMaterialError) {
+      throw new Error(
+        `Phoenix startup preflight failed for per-agent identity mapping: ${formatPhoenixError(error)}. ` +
+          "Check that each mapped agent uses distinct token and seal key material.",
+      );
+    }
     throw new Error(
       `Phoenix startup preflight failed for per-agent identity mapping: ${formatPhoenixError(error)}. ` +
-        "Check that each mapped agent uses distinct token and seal key material.",
+        "Check the configured per-agent token and seal key file paths and permissions.",
     );
   }
 
