@@ -22,7 +22,7 @@ export type PhoenixPeerCertificate = {
 };
 
 export type PhoenixApiErrorPayload = {
-  type: "approval_required" | "access_denied" | "http_error" | "network_error";
+  type: "approval_required" | "access_denied" | "http_error" | "network_error" | "sealed_response_error";
   status: number;
   error: string;
   code?: string;
@@ -115,6 +115,88 @@ function normalizeAuthMode(config: PhoenixClientConfig): PhoenixStatusResponse["
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+const SEALED_RESPONSE_REMEDIATION =
+  "Confirm the Phoenix server and policy support sealed responses for this runtime client: register the agent public seal key, verify require_sealed/sealed response contract handling, and upgrade/fix any Phoenix server or policy version mismatch so X-Phoenix-Seal-Key returns sealed_values for every successful ref.";
+
+const NON_JSON_RESPONSE_REMEDIATION =
+  "Verify the Phoenix server URL, Phoenix REST API compatibility, and any proxy in front of Phoenix. Proxies should forward JSON API responses and must not substitute plaintext or HTML bodies for Phoenix API calls.";
+
+const REQUIRED_SEALED_ENVELOPE_STRING_FIELDS = [
+  "algorithm",
+  "path",
+  "ref",
+  "ephemeral_key",
+  "nonce",
+  "ciphertext",
+] as const;
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values)];
+}
+
+function isValidSealedEnvelope(envelope: unknown, requestedRef: string): envelope is Record<string, unknown> {
+  if (!isRecord(envelope)) {
+    return false;
+  }
+  if (typeof envelope.version !== "number" || !Number.isFinite(envelope.version)) {
+    return false;
+  }
+  for (const field of REQUIRED_SEALED_ENVELOPE_STRING_FIELDS) {
+    const value = envelope[field];
+    if (typeof value !== "string" || value.length === 0) {
+      return false;
+    }
+  }
+  return envelope.ref === requestedRef;
+}
+
+function formatRefList(refs: string[]): string {
+  const displayed = refs.slice(0, 5);
+  const suffix = refs.length > displayed.length ? `, ... (${refs.length - displayed.length} more)` : "";
+  return `${displayed.join(", ")}${suffix}`;
+}
+
+function buildMissingSealedValuesError(missingRefs: string[]): PhoenixApiError {
+  return new PhoenixApiError({
+    type: "sealed_response_error",
+    status: 200,
+    error: "Phoenix sealed response contract violation",
+    code: "PHOENIX_SEALED_VALUES_MISSING",
+    detail:
+      `Phoenix returned HTTP 200 to a sealed resolve request, but omitted sealed_values envelope(s) for requested ref(s) without per-ref errors: ${formatRefList(missingRefs)}. The plugin refused to use plaintext values in sealed mode.`,
+    remediation: SEALED_RESPONSE_REMEDIATION,
+  });
+}
+
+function buildInvalidSealedValuesError(invalidRefs: string[]): PhoenixApiError {
+  return new PhoenixApiError({
+    type: "sealed_response_error",
+    status: 200,
+    error: "Phoenix sealed response contract violation",
+    code: "PHOENIX_SEALED_VALUES_INVALID",
+    detail:
+      `Phoenix returned HTTP 200 to a sealed resolve request, but sealed_values envelope(s) for requested ref(s) were malformed or did not match the requested ref: ${formatRefList(invalidRefs)}. The plugin refused to return untrusted sealed values.`,
+    remediation: SEALED_RESPONSE_REMEDIATION,
+  });
+}
+
+function buildNonJsonResponseError(
+  statusCode: number,
+  options: RequestOptions,
+  sealMode: boolean,
+): PhoenixApiError {
+  const toolContext = options.toolName ? ` for ${options.toolName}` : "";
+  return new PhoenixApiError({
+    type: sealMode && options.toolName === "phoenix_resolve" ? "sealed_response_error" : "http_error",
+    status: statusCode,
+    error: "Phoenix returned a non-JSON response",
+    code: "PHOENIX_NON_JSON_RESPONSE",
+    detail:
+      `Phoenix returned HTTP ${statusCode}${toolContext} with a non-JSON response body. The body was omitted from this error to avoid leaking secret material.`,
+    remediation: NON_JSON_RESPONSE_REMEDIATION,
+  });
 }
 
 function buildCallerHeaders(caller?: PhoenixCallerContext): Record<string, string> {
@@ -344,7 +426,7 @@ export class PhoenixClient {
               try {
                 parsedBody = JSON.parse(rawBody);
               } catch {
-                reject(new Error(`Phoenix returned non-JSON response: ${rawBody}`));
+                reject(buildNonJsonResponseError(response.statusCode ?? 0, options, this.config.sealMode));
                 return;
               }
             }
@@ -437,11 +519,33 @@ export class PhoenixClient {
       : {};
 
     if (this.config.sealMode && !options.dryRun) {
-      const sealedValues = isRecord(response.body.sealed_values) ? response.body.sealed_values : {};
+      const rawSealedValues = isRecord(response.body.sealed_values) ? response.body.sealed_values : {};
+      const successfulRefs = uniqueStrings(normalizedRefs).filter((ref) => !(ref in errors));
+      const missingEnvelopeRefs = successfulRefs.filter((ref) => !(ref in rawSealedValues));
+
+      if (missingEnvelopeRefs.length > 0) {
+        throw buildMissingSealedValuesError(missingEnvelopeRefs);
+      }
+
+      const sealedValues: Record<string, Record<string, unknown>> = {};
+      const invalidEnvelopeRefs: string[] = [];
+      for (const ref of successfulRefs) {
+        const envelope = rawSealedValues[ref];
+        if (!isValidSealedEnvelope(envelope, ref)) {
+          invalidEnvelopeRefs.push(ref);
+          continue;
+        }
+        sealedValues[ref] = envelope;
+      }
+
+      if (invalidEnvelopeRefs.length > 0) {
+        throw buildInvalidSealedValuesError(invalidEnvelopeRefs);
+      }
+
       return {
         mode: "sealed",
         values: Object.fromEntries(
-          Object.entries(sealedValues).map(([ref, envelope]) => [ref, encodeOpaqueSealedToken(envelope)]),
+          successfulRefs.map((ref) => [ref, encodeOpaqueSealedToken(sealedValues[ref])]),
         ),
         errors,
       };

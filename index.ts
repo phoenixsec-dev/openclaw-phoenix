@@ -1,4 +1,4 @@
-import { definePluginEntry } from "openclaw/plugin-sdk/core";
+import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { resolvePhoenixPluginConfig, phoenixPluginConfigSchema } from "./src/config.ts";
 import {
   createPhoenixListTool,
@@ -6,7 +6,7 @@ import {
   createPhoenixStatusTool,
 } from "./src/tools.ts";
 import { registerPhoenixCli } from "./src/cli.ts";
-import { runPhoenixStartupCheck } from "./src/startup.ts";
+import { runPhoenixStartupPreflightWarningOnly } from "./src/startup.ts";
 
 export default definePluginEntry({
   id: "phoenix-secrets",
@@ -57,21 +57,10 @@ export default definePluginEntry({
       { name: "phoenix_status", optional: true },
     );
 
-    api.registerHook(
-      "gateway:startup",
-      async () => {
-        await runPhoenixStartupCheck(config);
-      },
-      {
-        name: "phoenix-startup-check",
-        description: "Validate Phoenix connectivity during gateway startup",
-      },
-    );
-
     api.registerService({
       id: "phoenix-startup-check",
-      start: async () => {
-        await runPhoenixStartupCheck(config);
+      start: async (ctx) => {
+        await runPhoenixStartupPreflightWarningOnly(config, ctx.logger);
       },
     });
 

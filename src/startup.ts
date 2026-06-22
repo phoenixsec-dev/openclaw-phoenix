@@ -49,3 +49,28 @@ export async function runPhoenixStartupCheck(config: PhoenixPluginConfig): Promi
     }
   }
 }
+
+export type PhoenixStartupPreflightLogger = {
+  warn?: (message: string) => void;
+};
+
+export type PhoenixStartupPreflightResult =
+  | { ok: true }
+  | { ok: false; warning: string; error: unknown };
+
+export async function runPhoenixStartupPreflightWarningOnly(
+  config: PhoenixPluginConfig,
+  logger: PhoenixStartupPreflightLogger = {},
+): Promise<PhoenixStartupPreflightResult> {
+  try {
+    await runPhoenixStartupCheck(config);
+    return { ok: true };
+  } catch (error) {
+    const warning =
+      `Phoenix startup preflight warning (non-fatal): ${formatPhoenixError(error)}; ` +
+      "OpenClaw gateway will continue. Use phoenix_status (or openclaw phoenix verify with a diagnostic identity) to diagnose Phoenix connectivity, auth, TLS, and seal-key configuration. " +
+      "Active OpenClaw SecretRefs still fail through OpenClaw's configured secret providers.";
+    logger.warn?.(warning);
+    return { ok: false, warning, error };
+  }
+}

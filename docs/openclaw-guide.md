@@ -11,27 +11,27 @@ Use this if you want:
 
 ## Integration paths
 
-There are two integration paths:
+Phoenix and OpenClaw now have two complementary paths. Production deployments should choose deliberately per secret type and may use both at the same time:
 
-1. **Plugin path — recommended now**
-   - OpenClaw loads this plugin
-   - agents call `phoenix_resolve`, `phoenix_list`, and `phoenix_status`
-   - Phoenix policy is enforced per request
-   - sealed mode can keep values out of model-visible tool output
-   - this avoids the Docker lifecycle issues around `phoenix exec`
-   - **important:** this Phase 1 plugin does **not** hook into OpenClaw's built-in SecretRef resolution
-
-2. **Exec provider path — bootstrap/config path**
-   - OpenClaw resolves refs at startup via its built-in exec provider
-   - best for gateway auth tokens, model/API keys, channel bot tokens, and other startup-only secrets
+1. **Phoenix CLI exec provider — bootstrap/config SecretRefs**
+   - OpenClaw resolves built-in `{ source: "exec", provider, id }` SecretRefs while loading gateway/runtime configuration
+   - use this for gateway auth tokens, model/API keys, channel bot tokens, webhook secrets, and other startup-only config
    - Phoenix CLI v0.14.0+ supports OpenClaw's stdin/stdout exec protocol via `phoenix resolve --stdin-json` (aliases: `phoenix openclaw-exec-provider`, `phoenix secret-provider openclaw`)
-   - simpler operationally, but weaker for per-agent runtime policy enforcement than plugin tool calls
+   - active SecretRef failures should remain fail-fast through OpenClaw's built-in secrets system
+
+2. **`openclaw-phoenix` plugin package — agent runtime tools**
+   - OpenClaw loads this package as the `phoenix-secrets` plugin
+   - agents call `phoenix_status`, `phoenix_resolve`, and `phoenix_list` when tool policy allows them
+   - Phoenix policy is enforced per runtime request using the selected OpenClaw `ctx.agentId` mapping
+   - sealed mode can keep values out of model-visible tool output
+   - startup preflight is warning-only and diagnostic; it does not replace the exec-provider SecretRef path
+   - **important:** this plugin does **not** hook into OpenClaw's built-in SecretRef resolution
 
 ## Recommended usage by risk tier
 
-- **Tier 0 / Tier 1**: exec provider is acceptable if startup-only injection is enough
-- **Tier 1 / Tier 2**: prefer the plugin path
-- **Privileged or policy-sensitive secrets**: prefer plugin path with sealed mode enabled
+- **Bootstrap/config secrets at any tier**: use OpenClaw built-in SecretRefs with the Phoenix CLI exec provider so startup/reload fails fast when active refs cannot resolve.
+- **Runtime agent access**: use the plugin package and expose tools through allowlists.
+- **Privileged or policy-sensitive runtime secrets**: use the plugin path with per-agent credentials, registered public seal keys, sealed mode enabled, and conservative tool allowlists.
 
 ## OpenClaw ↔ Phoenix concept mapping
 
@@ -77,13 +77,21 @@ Example intent:
 
 ## Installing the plugin
 
-Local development install:
+Install the approved package release with OpenClaw's plugin installer (bare specs check ClawHub first, then npm):
 
 ```bash
-openclaw plugins install ./path/to/openclaw-phoenix -l
+openclaw plugins install openclaw-phoenix
+# Optional once a release version is chosen:
+openclaw plugins install openclaw-phoenix@<version> --pin
 ```
 
-Then enable/configure it in OpenClaw config with per-agent identities:
+Local source development remains available with a link install:
+
+```bash
+openclaw plugins install -l ./path/to/openclaw-phoenix
+```
+
+Then enable/configure the `phoenix-secrets` plugin in OpenClaw config with per-agent identities:
 
 ```json5
 {
@@ -131,7 +139,7 @@ Then enable/configure it in OpenClaw config with per-agent identities:
 
 That enables the tool-based integration only. It does **not** wire Phoenix into `agents.defaults.env` or other built-in SecretRef fields by itself. When `agents` is configured, tool calls without a mapped trusted `ctx.agentId` fail closed instead of using a shared fallback.
 
-The plugin registers its tools as optional. Expose them intentionally through OpenClaw tool policy. A conservative first rollout is to allow only `phoenix_status` and deny `phoenix_resolve`/`phoenix_list` until per-agent identity and sealed-mode behavior are validated.
+The plugin registers its tools as optional. Expose them intentionally through OpenClaw tool policy. A conservative first rollout is to allow only `phoenix_status` and deny `phoenix_resolve`/`phoenix_list` until per-agent token files, seal key files, Phoenix-side public seal-key registration, and sealed-mode behavior are validated for each mapped agent.
 
 ```json5
 {
@@ -154,7 +162,7 @@ These are **not** the same thing:
    - used by OpenClaw's built-in secret providers
    - object form: `{ source, provider, id }`
 
-This Phase 1 plugin supports the first form only. Installing the plugin does **not** make raw `phoenix://...` strings inside `agents.defaults.env` work as built-in OpenClaw secrets.
+This plugin supports the first form only. Installing the plugin does **not** make raw `phoenix://...` strings inside `agents.defaults.env` work as built-in OpenClaw secrets.
 
 If you want built-in startup secret resolution, use OpenClaw's exec-provider path with Phoenix CLI v0.14.0+.
 
@@ -165,8 +173,8 @@ Config fields:
 - `server` — Phoenix base URL, inherited by per-agent mappings unless an agent overrides it
 - `sealMode` — when true, `phoenix_resolve` returns `PHOENIX_SEALED:` tokens; inherited by agents unless they override it
 - `agents` — mapping from trusted OpenClaw `ctx.agentId` values (`main`, `kit`, `phoenix`, `echo`, `relay`) to Phoenix identities
-- `agents.<id>.tokenFile` — required per-agent bearer token file; must be unique across mapped agents and locked down with no group/other permissions
-- `agents.<id>.sealKeyFile` — required for that agent when effective `sealMode` is true; must be unique across mapped agents
+- `agents.<id>.tokenFile` — required per-agent bearer token file; must be unique across mapped agents and locked down with no group/other permission bits (`chmod 600` recommended)
+- `agents.<id>.sealKeyFile` — required for that agent when effective `sealMode` is true; must be unique across mapped agents and locked down with no group/other permission bits (`chmod 600` recommended)
 - `agents.<id>.defaultNamespace` — default namespace used when that agent passes bare ids like `api-key`
 - `agents.<id>.server`, `caCert`, `clientCert`, `clientKey`, `sealMode` — optional per-agent overrides
 
@@ -191,7 +199,7 @@ When `sealMode` is true, the plugin must use a persistent seal key for the selec
 
 Operational checklist:
 1. Generate a separate seal key pair for each OpenClaw agent identity, writing each private key to a local file.
-2. Keep private key files mounted/readable only by the OpenClaw gateway process; do not commit them. Use restrictive permissions such as `chmod 600 /path/to/echo.seal.key`.
+2. Keep token files and private key files mounted/readable only by the OpenClaw gateway process; do not commit them. Use restrictive permissions such as `chmod 600 /path/to/echo.token /path/to/echo.seal.key`.
 3. Register each derived/printed public key with Phoenix for the matching agent or role-session identity before live requests.
 4. Use live tool calls from each agent identity to validate Phoenix-side public-key registration and policy. `openclaw phoenix verify` is a diagnostic shared-identity helper and does not prove every runtime agent identity is authorized.
 5. Keep `phoenix_resolve` and `phoenix_list` denied until scoped auth, per-agent identity mapping, and sealed behavior are validated.
@@ -255,13 +263,27 @@ Note: Phoenix's current REST API does not expose a server version field, so this
 
 ## Startup behavior
 
-The plugin registers a startup preflight that verifies Phoenix connectivity. When `agents` is configured, startup checks each mapped agent identity with its selected token file and seal key, and rejects duplicate token or seal-key material across mapped agents.
+The plugin registers one documented OpenClaw plugin service (`api.registerService`) for startup preflight. It does not use the internal `gateway:startup` hook. When `agents` is configured, startup checks each mapped agent identity with its selected token file and seal key, and detects duplicate token or seal-key material across mapped agents.
 
-If Phoenix is unreachable or TLS/auth is broken, the plugin reports an actionable startup error. In current OpenClaw behavior this is surfaced through plugin startup/service error logging; whether the whole gateway hard-fails depends on OpenClaw core startup semantics.
+Startup preflight is warning-only. If Phoenix is unreachable, TLS/auth/seal-key configuration is broken, or duplicate per-agent token/seal-key material is detected, the plugin logs an actionable warning and the OpenClaw gateway continues running. Duplicate material means per-agent isolation is not ready; treat it as a serious rollout blocker for enabling `phoenix_resolve` / `phoenix_list` until corrected. Use the `phoenix_status` tool and `openclaw phoenix verify` (with a top-level diagnostic identity) for operator/agent diagnostics.
+
+Current OpenClaw plugin docs do not expose a generic doctor/diagnostic registration API for this non-channel plugin, so diagnostics are surfaced through the service logger, `phoenix_status`, and the Phoenix CLI verify command rather than an invented API.
+
+This does not weaken OpenClaw's built-in startup secret handling. Active OpenClaw SecretRefs resolved through the Phoenix CLI exec provider remain governed by OpenClaw's built-in secrets system; provider failures should fail startup/reload there, not through this runtime plugin preflight.
 
 ## Verification workflow
 
-Run:
+Package release checklist: before publishing, confirm/set an approved public repository or ClawHub source (`--source-repo`, `--source-commit`, `--source-ref`). This package intentionally omits `repository` metadata until parent release approval so public package metadata does not point at a private/internal source. Also re-check `openclaw.install`, `openclaw.compat`, and `openclaw.build` against the OpenClaw version validated for the release. Use the [release coordination checklist](./release-coordination.md) for the Phoenix server audit-only header contract and per-agent seal-key registration gate.
+
+Before packaging, run the non-secret OpenClaw plugin load/registration smoke from this repo:
+
+```bash
+npm run smoke:openclaw
+```
+
+It uses `OPENCLAW_REPO` or `/mnt/projects/openclaw` to check the documented SDK subpath and captures plugin tool/service/CLI registration with a stubbed OpenClaw API. It does not read live Phoenix secrets.
+
+For runtime config refs, run:
 
 ```bash
 openclaw phoenix verify
@@ -289,6 +311,7 @@ Key points:
 - plugin path uses direct API calls from gateway to Phoenix
 - mount only the minimum token/cert material into the gateway
 - prefer per-agent token files over env vars for live runtime tools
+- host token and seal-key files must have no group/other permission bits before mounting (`chmod 600` recommended); `:ro` bind mounts alone do not satisfy the plugin's checks
 - do not bake secrets into images or commit them to files
 - do not put raw `phoenix://...` strings into built-in OpenClaw env/config fields unless you are using a real SecretRef-backed provider path
 
@@ -332,8 +355,7 @@ Expected output:
 ```
 
 Migration note:
-- older docs/examples that imply plain `phoenix resolve <ref>` argument-by-argument execution are not compatible with OpenClaw's actual exec provider contract; use `phoenix resolve --stdin-json` or one of its OpenClaw aliases
-- if you need exec mode, implement or wait for Phoenix CLI support for this protocol on the Phoenix side
+- older docs/examples that imply plain `phoenix resolve <ref>` argument-by-argument execution are not compatible with OpenClaw's actual exec provider contract; use Phoenix CLI v0.14.0+ with `phoenix resolve --stdin-json` or one of its OpenClaw aliases
 
 ## Anti-patterns
 
@@ -352,8 +374,9 @@ Avoid:
 
 1. start with per-agent bearer token files + plugin path in a dev environment
 2. generate/register per-agent seal keys and enable sealed mode
-3. allow `phoenix_status` first and confirm startup checks each mapped identity
-4. test live `phoenix_resolve` from each mapped agent identity; confirm unmapped agents are denied
-5. optionally add a top-level diagnostic identity for `openclaw phoenix verify`
-6. move to mTLS for long-lived deployments where useful
-7. tighten namespaces and roles before introducing privileged secrets
+3. complete the [release coordination checklist](./release-coordination.md), including Phoenix server audit-only header verification
+4. allow `phoenix_status` first and confirm startup checks each mapped identity
+5. test live `phoenix_resolve` from each mapped agent identity; confirm unmapped agents are denied
+6. optionally add a top-level diagnostic identity for `openclaw phoenix verify`
+7. move to mTLS for long-lived deployments where useful
+8. tighten namespaces and roles before introducing privileged secrets

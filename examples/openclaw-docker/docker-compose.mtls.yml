@@ -22,6 +22,7 @@ services:
     volumes:
       - ../../:/plugins/openclaw-phoenix:ro
       - ./openclaw.jsonc:/root/.openclaw/openclaw.jsonc:ro
+      # Host token/seal-key files must be chmod 600-style before mounting; :ro is not enough.
       - ${PHOENIX_TOKEN_FILE_MAIN_HOST}:${PHOENIX_TOKEN_FILE_MAIN}:ro
       - ${PHOENIX_TOKEN_FILE_KIT_HOST}:${PHOENIX_TOKEN_FILE_KIT}:ro
       - ${PHOENIX_TOKEN_FILE_PHOENIX_HOST}:${PHOENIX_TOKEN_FILE_PHOENIX}:ro

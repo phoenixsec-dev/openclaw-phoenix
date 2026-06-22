@@ -6,7 +6,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createPhoenixResolveTool, createPhoenixListTool, createPhoenixStatusTool } from "../src/tools.ts";
-import { runPhoenixStartupCheck } from "../src/startup.ts";
+import {
+  runPhoenixStartupCheck,
+  runPhoenixStartupPreflightWarningOnly,
+} from "../src/startup.ts";
 import { verifyPhoenixRefsInConfig } from "../src/cli.ts";
 
 const TEST_SEAL_PRIVATE_KEY = "dwdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LCo=";
@@ -166,6 +169,80 @@ test("resolve tool keeps sealed output opaque and excludes plaintext values", as
       assert.match(text, /PHOENIX_SEALED:/);
       assert.doesNotMatch(text, /plain-secret-that-must-not-appear/);
       assert.doesNotMatch(serializedDetails, /plain-secret-that-must-not-appear/);
+    });
+  });
+});
+
+test("resolve tool fails closed when sealed mode response only contains plaintext", async () => {
+  await withSealKeyFile(async (sealKeyFile) => {
+    await withServer(async (req, res) => {
+      assert.equal(req.headers["x-phoenix-seal-key"], TEST_SEAL_PUBLIC_KEY);
+      res.setHeader("content-type", "application/json");
+      res.end(
+        JSON.stringify({
+          values: {
+            "phoenix://openclaw/key": "plain-secret-that-must-not-appear",
+          },
+        }),
+      );
+    }, async (baseUrl) => {
+      const resolveTool = createPhoenixResolveTool({
+        server: baseUrl,
+        token: "token",
+        sealKeyFile,
+        defaultNamespace: "openclaw",
+        sealMode: true,
+      });
+      const result = await resolveTool.execute("tool-1", { refs: ["key"] });
+      const details = result.details as {
+        ok: boolean;
+        resolved?: number;
+        error?: { type?: string; code?: string; remediation?: string };
+      };
+      const text = result.content.map((entry) => entry.text).join("\n");
+      const serializedDetails = JSON.stringify(result.details);
+
+      assert.equal(details.ok, false);
+      assert.equal(details.resolved, undefined);
+      assert.equal(details.error?.type, "sealed_response_error");
+      assert.equal(details.error?.code, "PHOENIX_SEALED_VALUES_MISSING");
+      assert.match(details.error?.remediation ?? "", /sealed response contract/);
+      assert.doesNotMatch(text, /plain-secret-that-must-not-appear/);
+      assert.doesNotMatch(serializedDetails, /plain-secret-that-must-not-appear/);
+    });
+  });
+});
+
+test("resolve tool sanitizes HTTP 200 non-JSON bodies in sealed mode", async () => {
+  await withSealKeyFile(async (sealKeyFile) => {
+    await withServer(async (req, res) => {
+      assert.equal(req.headers["x-phoenix-seal-key"], TEST_SEAL_PUBLIC_KEY);
+      res.statusCode = 200;
+      res.setHeader("content-type", "text/plain");
+      res.end("text-plain-fake-secret-body");
+    }, async (baseUrl) => {
+      const resolveTool = createPhoenixResolveTool({
+        server: baseUrl,
+        token: "token",
+        sealKeyFile,
+        defaultNamespace: "openclaw",
+        sealMode: true,
+      });
+      const result = await resolveTool.execute("tool-1", { refs: ["key"] });
+      const details = result.details as {
+        ok: boolean;
+        error?: { type?: string; code?: string; detail?: string; remediation?: string };
+      };
+      const text = result.content.map((entry) => entry.text).join("\n");
+      const serializedDetails = JSON.stringify(result.details);
+
+      assert.equal(details.ok, false);
+      assert.equal(details.error?.type, "sealed_response_error");
+      assert.equal(details.error?.code, "PHOENIX_NON_JSON_RESPONSE");
+      assert.match(details.error?.detail ?? "", /body was omitted/);
+      assert.match(details.error?.remediation ?? "", /JSON API responses/);
+      assert.doesNotMatch(text, /text-plain-fake-secret-body/);
+      assert.doesNotMatch(serializedDetails, /text-plain-fake-secret-body/);
     });
   });
 });
@@ -489,5 +566,85 @@ test("runPhoenixStartupCheck throws actionable connectivity errors", async () =>
         sealMode: false,
       }),
     /Phoenix startup preflight failed/,
+  );
+});
+
+test("runPhoenixStartupPreflightWarningOnly logs and resolves on connectivity errors", async () => {
+  const warnings: string[] = [];
+  const result = await runPhoenixStartupPreflightWarningOnly(
+    {
+      server: "http://127.0.0.1:1",
+      token: "token",
+      sealMode: false,
+    },
+    {
+      warn: (message) => warnings.push(message),
+    },
+  );
+
+  assert.equal(result.ok, false);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /non-fatal/);
+  assert.match(warnings[0], /OpenClaw gateway will continue/);
+  assert.match(warnings[0], /phoenix_status/);
+  assert.match(warnings[0], /configured secret providers/);
+});
+
+test("runPhoenixStartupPreflightWarningOnly logs and resolves on duplicate per-agent material", async () => {
+  await withAgentIdentityFiles(async (files) => {
+    const config = {
+      server: "http://127.0.0.1:1",
+      sealMode: true,
+      agents: {
+        main: {
+          tokenFile: files.mainTokenFile,
+          sealKeyFile: files.mainSealKeyFile,
+          defaultNamespace: "main-ns",
+        },
+        kit: {
+          tokenFile: files.kitTokenFile,
+          sealKeyFile: files.kitSealKeyFile,
+          defaultNamespace: "kit-ns",
+        },
+      },
+    };
+
+    await fs.writeFile(files.kitTokenFile, "main-token\n", { encoding: "utf8", mode: 0o600 });
+    const tokenWarnings: string[] = [];
+    const tokenResult = await runPhoenixStartupPreflightWarningOnly(config, {
+      warn: (message) => tokenWarnings.push(message),
+    });
+
+    assert.equal(tokenResult.ok, false);
+    assert.equal(tokenWarnings.length, 1);
+    assert.match(tokenWarnings[0], /non-fatal/);
+    assert.match(tokenWarnings[0], /OpenClaw gateway will continue/);
+    assert.match(tokenWarnings[0], /token material must be unique/);
+    assert.match(tokenWarnings[0], /distinct token and seal key material/);
+
+    await fs.writeFile(files.kitTokenFile, "kit-token\n", { encoding: "utf8", mode: 0o600 });
+    await fs.writeFile(files.kitSealKeyFile, `${TEST_SEAL_PRIVATE_KEY}\n`, { encoding: "utf8", mode: 0o600 });
+    const sealKeyWarnings: string[] = [];
+    const sealKeyResult = await runPhoenixStartupPreflightWarningOnly(config, {
+      warn: (message) => sealKeyWarnings.push(message),
+    });
+
+    assert.equal(sealKeyResult.ok, false);
+    assert.equal(sealKeyWarnings.length, 1);
+    assert.match(sealKeyWarnings[0], /non-fatal/);
+    assert.match(sealKeyWarnings[0], /OpenClaw gateway will continue/);
+    assert.match(sealKeyWarnings[0], /seal key material must be unique/);
+    assert.match(sealKeyWarnings[0], /distinct token and seal key material/);
+  });
+});
+
+test("plugin entry uses one documented startup service and no internal gateway startup hook", async () => {
+  const indexSource = await fs.readFile(new URL("../index.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(indexSource, /registerHook\s*\(\s*["']gateway:startup["']/);
+  assert.equal((indexSource.match(/registerService\s*\(/g) ?? []).length, 1);
+  assert.equal((indexSource.match(/\.on\s*\(\s*["']gateway_start["']/g) ?? []).length, 0);
+  assert.equal(
+    (indexSource.match(/await runPhoenixStartupPreflightWarningOnly\s*\(/g) ?? []).length,
+    1,
   );
 });

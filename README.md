@@ -4,7 +4,7 @@ OpenClaw plugin for [Phoenix Secrets Manager](https://github.com/phoenixsec-dev/
 
 ## Status
 
-Phase 1 development plugin. Local-link install only for now.
+Package-oriented release hardening is in progress. This plugin is intended to ship with Phoenix as an installable OpenClaw plugin package, not as local-link-only. Parent release review still gates publishing/deployment from this tree.
 
 ## What this does
 
@@ -15,21 +15,34 @@ This plugin adds three native OpenClaw tools plus a CLI helper:
 - `phoenix_status` — check connectivity, admin-visible status, and TLS cert health
 - `openclaw phoenix verify` — dry-run all `phoenix://` refs currently present in the active gateway config
 
-It also registers a gateway-startup connectivity check so Phoenix misconfiguration is surfaced immediately during startup.
+It also registers a warning-only gateway-startup preflight so Phoenix misconfiguration is surfaced immediately without killing the OpenClaw gateway.
 
 The tools are registered as optional OpenClaw plugin tools. Expose them deliberately with `tools.alsoAllow` (for example, start with `phoenix_status` only) or a plugin/group allowlist. Keep `phoenix_resolve` and `phoenix_list` denied until per-agent Phoenix identities and sealed-response policy are ready.
 
-Important: this Phase 1 plugin is a **tool-based integration**. It does **not** hook Phoenix into OpenClaw's built-in SecretRef object resolution, so raw `phoenix://...` strings in gateway config env fields are not supported by this plugin alone. For built-in OpenClaw SecretRefs and bootstrap/config secrets, use Phoenix CLI v0.14.0+ as an exec provider (`phoenix resolve --stdin-json`, alias `phoenix openclaw-exec-provider`).
+Startup preflight is diagnostic only: Phoenix down/auth/TLS/seal-key issues and duplicate per-agent token/seal-key material are logged as warnings and remain visible through `phoenix_status` / `openclaw phoenix verify`. Duplicate material is a serious rollout blocker for enabling `phoenix_resolve` / `phoenix_list` until corrected. Active OpenClaw SecretRefs resolved through the Phoenix CLI exec-provider path still fail startup/reload through OpenClaw's built-in secrets system.
+
+Important: this package is a **runtime tool-based integration**. It does **not** hook Phoenix into OpenClaw's built-in SecretRef object resolution, so raw `phoenix://...` strings in gateway config env fields are not supported by this plugin alone. For built-in OpenClaw SecretRefs and bootstrap/config secrets, use Phoenix CLI v0.14.0+ as an exec provider (`phoenix resolve --stdin-json`, alias `phoenix openclaw-exec-provider`).
 
 ## Installation
 
+Package install after the release source is approved (OpenClaw checks ClawHub first, then npm for bare package specs):
+
 ```bash
-openclaw plugins install ./path/to/openclaw-phoenix -l
+openclaw plugins install openclaw-phoenix
+# Optional: pin the exact package version once chosen for release.
+openclaw plugins install openclaw-phoenix@<version> --pin
+```
+
+Local source development is still supported. Use a link install when you want OpenClaw to load this checkout directly:
+
+```bash
+openclaw plugins install -l ./path/to/openclaw-phoenix
 ```
 
 See also:
 - `docs/openclaw-guide.md`
 - `docs/integrations.md`
+- `docs/release-coordination.md`
 - `examples/openclaw-plugin/`
 - `examples/openclaw-docker/`
 
@@ -85,7 +98,7 @@ Recommended live configuration maps trusted OpenClaw runtime agent ids to separa
 }
 ```
 
-Per-agent entries support optional `server`, `caCert`, `clientCert`, `clientKey`, and `sealMode` overrides. Token files and seal key files must be unique per mapped agent; startup also rejects duplicate token/seal-key material. Unknown or unmapped `ctx.agentId` values fail closed with remediation instead of falling back to a shared token.
+Per-agent entries support optional `server`, `caCert`, `clientCert`, `clientKey`, and `sealMode` overrides. Token files and seal key files must be unique per mapped agent, and the selected host files must have no group/other permission bits (`chmod 600` is recommended). Warning-only startup preflight also detects duplicate token/seal-key material. Treat duplicate material or insecure file modes as serious rollout blockers for enabling `phoenix_resolve` / `phoenix_list` until corrected. Unknown or unmapped `ctx.agentId` values fail closed with remediation instead of falling back to a shared token.
 
 Single-identity fields (`token`, `tokenFile`, `sealKeyFile`, `defaultNamespace`, and their environment fallbacks) remain available for diagnostics/dev only. They are **not** a per-agent trust boundary and should not be used to expose live `phoenix_resolve`/`phoenix_list` to multiple agents.
 
@@ -114,6 +127,34 @@ Run tests locally:
 ```bash
 npm test
 ```
+
+Run the OpenClaw plugin load/registration smoke explicitly:
+
+```bash
+npm run smoke:openclaw
+```
+
+The smoke uses `OPENCLAW_REPO` when set, otherwise `/mnt/projects/openclaw`. If the local OpenClaw checkout is absent it reports a TAP skip with that instruction. It imports the plugin through the documented `openclaw/plugin-sdk/plugin-entry` seam with a smoke SDK shim, verifies the local OpenClaw checkout exposes that SDK subpath, captures tool/service/CLI registration, and does not read real Phoenix secrets or deploy anything.
+
+## Package release checklist
+
+Before parent release approval/publish:
+
+- Confirm the package source and version/tag. Suggested first package release line: `0.2.0` or the next Phoenix-aligned version chosen by the parent release plan.
+- Confirm/set an approved public repository or ClawHub source (`--source-repo`, `--source-commit`, `--source-ref`) before publishing. This package intentionally omits `repository` metadata until parent release approval so public package metadata does not point at a private/internal source.
+- Confirm package metadata (`name`, `license`, `files`, `exports`, `openclaw.install`, `openclaw.compat`, `openclaw.build`) and inspect package contents with `npm pack --dry-run`.
+- Run `npm test`, `npm run smoke:openclaw`, and `git diff --check` from this repo.
+- Validate OpenClaw built-in SecretRefs through the Phoenix CLI exec provider separately from this plugin.
+- Use `docs/release-coordination.md` to verify the Phoenix server audit-only `X-OpenClaw-*` header contract and per-agent seal-key registration inventory.
+- Keep rollout conservative: allow `phoenix_status` first, then enable `phoenix_resolve`/`phoenix_list` only after per-agent token files, seal key files (`0600`), Phoenix-side public seal-key registration, and tool allowlists have been validated.
+- Re-check examples/docs for plaintext secrets before publishing.
+
+Draft release-note bullets for parent review:
+
+- Packageable OpenClaw Phoenix plugin with runtime `phoenix_status`, `phoenix_resolve`, and `phoenix_list` tools.
+- Warning-only startup preflight and `openclaw phoenix verify` diagnostics for Phoenix connectivity/configuration.
+- Per-agent token/seal-key mapping with sealed-response UX and conservative allowlist guidance.
+- Documentation aligned with Phoenix CLI exec-provider SecretRefs for bootstrap/config secrets.
 
 ## Notes
 
