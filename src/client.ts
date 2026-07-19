@@ -8,6 +8,7 @@ import { buildSealHeader } from "./seal.ts";
 import { readPhoenixTokenFile } from "./token.ts";
 import type { PhoenixClientConfig } from "./config.ts";
 import { PhoenixIdentityError } from "./identity.ts";
+import { PhoenixDuplicateIdentityMaterialError } from "./identity-validation.ts";
 import type { PhoenixCallerContext } from "./tool-helpers.ts";
 
 export type PhoenixPeerCertificate = {
@@ -299,7 +300,10 @@ export function toPhoenixErrorPayload(error: unknown): PhoenixApiErrorPayload {
   if (error instanceof PhoenixApiError) {
     return error.toJSON();
   }
-  if (error instanceof PhoenixIdentityError) {
+  if (
+    error instanceof PhoenixIdentityError ||
+    error instanceof PhoenixDuplicateIdentityMaterialError
+  ) {
     return error.toJSON();
   }
   const message = error instanceof Error ? error.message : String(error);

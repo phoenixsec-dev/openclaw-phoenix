@@ -4,22 +4,40 @@ import { fingerprintSealPublicKey } from "./seal.ts";
 import { fingerprintPhoenixTokenFile } from "./token.ts";
 
 export class PhoenixDuplicateIdentityMaterialError extends Error {
+  readonly status = 403;
+  readonly type = "access_denied" as const;
+  readonly code = "PHOENIX_DUPLICATE_IDENTITY_MATERIAL";
   readonly agentId: string;
   readonly existingAgentId: string;
   readonly material: "token" | "seal key";
+  readonly detail: string;
+  readonly remediation =
+    "Configure every mapped OpenClaw agent with distinct Phoenix token and seal key material before using Phoenix tools.";
 
   constructor(params: {
     agentId: string;
     existingAgentId: string;
     material: "token" | "seal key";
   }) {
-    super(
-      `phoenix-secrets agents.${params.agentId} ${params.material} material must be unique; it matches agents.${params.existingAgentId}`,
-    );
+    const message =
+      `phoenix-secrets agents.${params.agentId} ${params.material} material must be unique; it matches agents.${params.existingAgentId}`;
+    super(message);
     this.name = "PhoenixDuplicateIdentityMaterialError";
     this.agentId = params.agentId;
     this.existingAgentId = params.existingAgentId;
     this.material = params.material;
+    this.detail = message;
+  }
+
+  toJSON() {
+    return {
+      type: this.type,
+      status: this.status,
+      error: this.message,
+      code: this.code,
+      detail: this.detail,
+      remediation: this.remediation,
+    };
   }
 }
 

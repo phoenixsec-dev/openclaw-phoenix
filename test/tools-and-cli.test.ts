@@ -347,6 +347,65 @@ test("per-agent identity is selected from runtime context only and keeps sealed 
   });
 });
 
+test("runtime tools fail closed when mapped agents share token or seal key material", async () => {
+  await withAgentIdentityFiles(async (files) => {
+    const config = {
+      server: "http://127.0.0.1:1",
+      sealMode: true,
+      agents: {
+        main: {
+          tokenFile: files.mainTokenFile,
+          sealKeyFile: files.mainSealKeyFile,
+          defaultNamespace: "main-ns",
+        },
+        kit: {
+          tokenFile: files.kitTokenFile,
+          sealKeyFile: files.kitSealKeyFile,
+          defaultNamespace: "kit-ns",
+        },
+      },
+    };
+
+    await fs.writeFile(files.kitTokenFile, "main-token\n", { encoding: "utf8", mode: 0o600 });
+    const duplicateTokenResults = [
+      await createPhoenixResolveTool(config, { agentId: "main" }).execute("tool-resolve", {
+        refs: ["key"],
+      }),
+      await createPhoenixListTool(config, { agentId: "main" }).execute("tool-list", {}),
+      await createPhoenixStatusTool(config, { agentId: "main" }).execute(),
+    ];
+
+    for (const result of duplicateTokenResults) {
+      const details = result.details as {
+        ok: boolean;
+        error?: { type?: string; code?: string; detail?: string; remediation?: string };
+      };
+      assert.equal(details.ok, false);
+      assert.equal(details.error?.type, "access_denied");
+      assert.equal(details.error?.code, "PHOENIX_DUPLICATE_IDENTITY_MATERIAL");
+      assert.match(details.error?.detail ?? "", /token material must be unique/);
+      assert.match(details.error?.remediation ?? "", /distinct Phoenix token and seal key material/);
+    }
+
+    await fs.writeFile(files.kitTokenFile, "kit-token\n", { encoding: "utf8", mode: 0o600 });
+    await fs.writeFile(files.kitSealKeyFile, `${TEST_SEAL_PRIVATE_KEY}\n`, {
+      encoding: "utf8",
+      mode: 0o600,
+    });
+    const duplicateSealResult = await createPhoenixResolveTool(config, {
+      agentId: "main",
+    }).execute("tool-resolve", { refs: ["key"] });
+    const duplicateSealDetails = duplicateSealResult.details as {
+      ok: boolean;
+      error?: { type?: string; code?: string; detail?: string };
+    };
+    assert.equal(duplicateSealDetails.ok, false);
+    assert.equal(duplicateSealDetails.error?.type, "access_denied");
+    assert.equal(duplicateSealDetails.error?.code, "PHOENIX_DUPLICATE_IDENTITY_MATERIAL");
+    assert.match(duplicateSealDetails.error?.detail ?? "", /seal key material must be unique/);
+  });
+});
+
 test("per-agent mapping fails closed for unknown or unmapped runtime agents", async () => {
   const resolveTool = createPhoenixResolveTool(
     {
@@ -468,6 +527,32 @@ test("verifyPhoenixRefsInConfig rejects agents-only config without diagnostic id
         },
       ),
     /top-level diagnostic Phoenix identity/,
+  );
+});
+
+test("verifyPhoenixRefsInConfig requires a top-level diagnostic seal key in sealed agents mode", async () => {
+  await assert.rejects(
+    () =>
+      verifyPhoenixRefsInConfig(
+        {
+          env: {
+            SECRET: "phoenix://openclaw/key",
+          },
+        },
+        {
+          server: "http://127.0.0.1:1",
+          token: "diagnostic-token",
+          sealMode: true,
+          agents: {
+            main: {
+              tokenFile: "/tmp/openclaw-phoenix-main-token-not-read",
+              sealKeyFile: "/tmp/openclaw-phoenix-main-seal-key-not-read",
+              defaultNamespace: "main-ns",
+            },
+          },
+        },
+      ),
+    /top-level diagnostic sealKeyFile.*PHOENIX_SEAL_KEY/,
   );
 });
 

@@ -22,15 +22,21 @@ export async function verifyPhoenixRefsInConfig(
   pluginConfig: PhoenixPluginConfig,
 ): Promise<PhoenixVerifyResult> {
   const refs = [...extractPhoenixRefs(configSnapshot)].sort((left, right) => left.localeCompare(right));
-  if (
-    hasPhoenixAgentMappings(pluginConfig) &&
-    !pluginConfig.token &&
-    !pluginConfig.tokenFile &&
-    !(pluginConfig.clientCert && pluginConfig.clientKey)
-  ) {
-    throw new Error(
-      "openclaw phoenix verify requires a top-level diagnostic Phoenix identity when per-agent mappings are enabled; runtime agent identity comes from ctx.agentId and is not available to this CLI command",
-    );
+  if (hasPhoenixAgentMappings(pluginConfig)) {
+    if (
+      !pluginConfig.token &&
+      !pluginConfig.tokenFile &&
+      !(pluginConfig.clientCert && pluginConfig.clientKey)
+    ) {
+      throw new Error(
+        "openclaw phoenix verify requires a top-level diagnostic Phoenix identity when per-agent mappings are enabled (token/tokenFile or clientCert/clientKey, plus sealKeyFile or PHOENIX_SEAL_KEY when top-level sealMode is enabled); runtime agent identity comes from ctx.agentId and is not available to this CLI command",
+      );
+    }
+    if (pluginConfig.sealMode && !pluginConfig.sealKeyFile) {
+      throw new Error(
+        "openclaw phoenix verify requires a top-level diagnostic sealKeyFile (or PHOENIX_SEAL_KEY) when top-level sealMode is enabled; agents.<id>.sealKeyFile entries belong to runtime identities and are not used by this CLI command",
+      );
+    }
   }
 
   const client = new PhoenixClient(pluginConfig);

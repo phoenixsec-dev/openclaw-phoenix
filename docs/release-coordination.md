@@ -7,7 +7,7 @@ This checklist coordinates release gating for the `openclaw-phoenix` plugin and 
 Before enabling broad runtime secret tools, verify the Phoenix server change that consumes OpenClaw metadata:
 
 - [ ] Phoenix server PR/commit that handles OpenClaw metadata is merged or otherwise approved for the target environment.
-- [ ] Code review confirms every `X-OpenClaw-*` value is recorded only as request/audit metadata.
+- [ ] Code review confirms every `X-OpenClaw-*` value and `X-Phoenix-Tool` are recorded only as request/audit metadata.
 - [ ] Code review confirms Phoenix auth identity, ACL, attestation, sessions, and role selection are never derived from raw `X-OpenClaw-*` headers.
 - [ ] Tests or a manual negative check confirm spoofed OpenClaw headers cannot elevate a low-scope token/session/mTLS identity.
 - [ ] Audit output is sanitized according to Phoenix logging policy and does not include Phoenix bearer tokens, private keys, plaintext secrets, or private seal-key material.
@@ -22,6 +22,7 @@ The plugin sends these OpenClaw metadata headers when the OpenClaw runtime conte
 | `X-OpenClaw-Channel` | `ctx.messageChannel` | audit/correlation hint only |
 | `X-OpenClaw-Requester-Sender` | `ctx.requesterSenderId` | audit/correlation hint only |
 | `X-OpenClaw-Sender-Is-Owner` | `ctx.senderIsOwner === true` | audit/correlation hint only |
+| `X-Phoenix-Tool` | plugin operation (`phoenix_status`, `phoenix_resolve`, or `phoenix_list`) | audit/correlation hint only |
 
 These headers must never be treated as authentication or authoritative identity by Phoenix. They are not a substitute for Phoenix token, mTLS, session, ACL, attestation, or sealed-response policy checks.
 

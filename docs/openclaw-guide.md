@@ -183,7 +183,7 @@ Diagnostic/dev single-identity fields still exist:
 - `token`, `tokenFile`, `sealKeyFile`, `defaultNamespace`
 - `PHOENIX_TOKEN`, `PHOENIX_TOKEN_FILE`, `PHOENIX_DEFAULT_NAMESPACE`, `PHOENIX_SEAL_KEY`
 
-Single-identity mode is useful for local diagnostics and `openclaw phoenix verify`, but it is **not** per-agent trust. Do not expose live `phoenix_resolve`/`phoenix_list` to multiple agents with one shared token.
+Single-identity mode is useful for local diagnostics and `openclaw phoenix verify`, but it is **not** per-agent trust. Do not expose live `phoenix_resolve`/`phoenix_list` to multiple agents with one shared token. When per-agent mappings inherit top-level `sealMode: true`, the CLI diagnostic identity also needs its own top-level `sealKeyFile` (or `PHOENIX_SEAL_KEY`); the CLI does not borrow an `agents.<id>.sealKeyFile`.
 
 Environment fallbacks shared by both modes:
 
@@ -265,7 +265,7 @@ Note: Phoenix's current REST API does not expose a server version field, so this
 
 The plugin registers one documented OpenClaw plugin service (`api.registerService`) for startup preflight. It does not use the internal `gateway:startup` hook. When `agents` is configured, startup checks each mapped agent identity with its selected token file and seal key, and detects duplicate token or seal-key material across mapped agents.
 
-Startup preflight is warning-only. If Phoenix is unreachable, TLS/auth/seal-key configuration is broken, or duplicate per-agent token/seal-key material is detected, the plugin logs an actionable warning and the OpenClaw gateway continues running. Duplicate material means per-agent isolation is not ready; treat it as a serious rollout blocker for enabling `phoenix_resolve` / `phoenix_list` until corrected. Use the `phoenix_status` tool and `openclaw phoenix verify` (with a top-level diagnostic identity) for operator/agent diagnostics.
+Startup preflight is warning-only. If Phoenix is unreachable, TLS/auth/seal-key configuration is broken, or duplicate per-agent token/seal-key material is detected, the plugin logs an actionable warning and the OpenClaw gateway continues running. Runtime tools separately fingerprint all mapped identity material on each call and fail closed with `PHOENIX_DUPLICATE_IDENTITY_MATERIAL` if token contents or derived seal public keys match, so duplicate material cannot be used after a warning. Use `openclaw phoenix verify` with a top-level diagnostic identity for CLI diagnostics; `phoenix_status` also fails closed on duplicate mapped identity material.
 
 Current OpenClaw plugin docs do not expose a generic doctor/diagnostic registration API for this non-channel plugin, so diagnostics are surfaced through the service logger, `phoenix_status`, and the Phoenix CLI verify command rather than an invented API.
 
@@ -296,7 +296,7 @@ What it does:
 - sends the derived public seal key on dry-run requests when sealed mode is enabled
 - reports OK/FAIL per ref without returning plaintext secret values
 
-`openclaw phoenix verify` runs outside agent tool context, so it cannot select `ctx.agentId`. If per-agent mappings are enabled without a top-level diagnostic identity, the command asks for one rather than pretending to verify per-agent trust. Dry-run verification does not prove live sealed access is registered/authorized for every runtime agent; Phoenix-side public-key registration and policy still need live rollout checks from each mapped agent.
+`openclaw phoenix verify` runs outside agent tool context, so it cannot select `ctx.agentId`. If per-agent mappings are enabled without a top-level diagnostic identity, the command asks for one rather than pretending to verify per-agent trust. When top-level `sealMode` is enabled, that diagnostic identity must include its own top-level `sealKeyFile` (or `PHOENIX_SEAL_KEY`); per-agent seal keys are intentionally not selected by the CLI. Dry-run verification does not prove live sealed access is registered/authorized for every runtime agent; Phoenix-side public-key registration and policy still need live rollout checks from each mapped agent.
 
 Use this after:
 - changing Phoenix URL/auth config
@@ -309,6 +309,7 @@ See `examples/openclaw-docker/` for copy-pasteable examples.
 
 Key points:
 - plugin path uses direct API calls from gateway to Phoenix
+- the mTLS Compose example overrides `PHOENIX_SERVER` to an `https://` URL because client CA/certificate/key material is only applied to HTTPS requests
 - mount only the minimum token/cert material into the gateway
 - prefer per-agent token files over env vars for live runtime tools
 - host token and seal-key files must have no group/other permission bits before mounting (`chmod 600` recommended); `:ro` bind mounts alone do not satisfy the plugin's checks
@@ -377,6 +378,6 @@ Avoid:
 3. complete the [release coordination checklist](./release-coordination.md), including Phoenix server audit-only header verification
 4. allow `phoenix_status` first and confirm startup checks each mapped identity
 5. test live `phoenix_resolve` from each mapped agent identity; confirm unmapped agents are denied
-6. optionally add a top-level diagnostic identity for `openclaw phoenix verify`
+6. optionally add a top-level diagnostic identity for `openclaw phoenix verify`, including its own top-level `sealKeyFile` when top-level sealed mode is enabled
 7. move to mTLS for long-lived deployments where useful
 8. tighten namespaces and roles before introducing privileged secrets

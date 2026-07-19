@@ -26,6 +26,7 @@ Because `openclaw.jsonc` enables sealed mode and per-agent identities, create/re
 ## Notes
 
 - The plugin path talks to Phoenix over HTTP(S) directly.
+- The mTLS Compose file deliberately overrides `PHOENIX_SERVER` to `https://phoenix:9090`; do not use an `http://` URL with client certificate settings because the plugin only applies TLS material to HTTPS requests.
 - The gateway only needs the minimum Phoenix auth material and per-agent seal private keys.
 - Host token/seal-key file modes must be `0600`-style before bind mounting; `:ro` protects the mounted view but does not fix insecure host modes.
 - Single-identity config is diagnostic/dev only and is not a per-agent trust boundary.

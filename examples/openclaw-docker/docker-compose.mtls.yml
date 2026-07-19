@@ -16,6 +16,7 @@ services:
     env_file:
       - .env
     environment:
+      PHOENIX_SERVER: "https://phoenix:9090"
       PHOENIX_CA_CERT: "/run/phoenix/ca.crt"
       PHOENIX_CLIENT_CERT: "/run/phoenix/client.crt"
       PHOENIX_CLIENT_KEY: "/run/phoenix/client.key"

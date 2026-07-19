@@ -19,7 +19,7 @@ It also registers a warning-only gateway-startup preflight so Phoenix misconfigu
 
 The tools are registered as optional OpenClaw plugin tools. Expose them deliberately with `tools.alsoAllow` (for example, start with `phoenix_status` only) or a plugin/group allowlist. Keep `phoenix_resolve` and `phoenix_list` denied until per-agent Phoenix identities and sealed-response policy are ready.
 
-Startup preflight is diagnostic only: Phoenix down/auth/TLS/seal-key issues and duplicate per-agent token/seal-key material are logged as warnings and remain visible through `phoenix_status` / `openclaw phoenix verify`. Duplicate material is a serious rollout blocker for enabling `phoenix_resolve` / `phoenix_list` until corrected. Active OpenClaw SecretRefs resolved through the Phoenix CLI exec-provider path still fail startup/reload through OpenClaw's built-in secrets system.
+Startup preflight is diagnostic only: Phoenix down/auth/TLS/seal-key issues and duplicate per-agent token/seal-key material are logged as warnings. Runtime tool execution independently fingerprints all mapped per-agent token/seal-key material and fails closed if two agents share credential contents, so a warning cannot silently collapse the live per-agent trust boundary. Active OpenClaw SecretRefs resolved through the Phoenix CLI exec-provider path still fail startup/reload through OpenClaw's built-in secrets system.
 
 Important: this package is a **runtime tool-based integration**. It does **not** hook Phoenix into OpenClaw's built-in SecretRef object resolution, so raw `phoenix://...` strings in gateway config env fields are not supported by this plugin alone. For built-in OpenClaw SecretRefs and bootstrap/config secrets, use Phoenix CLI v0.14.0+ as an exec provider (`phoenix resolve --stdin-json`, alias `phoenix openclaw-exec-provider`).
 
@@ -98,7 +98,7 @@ Recommended live configuration maps trusted OpenClaw runtime agent ids to separa
 }
 ```
 
-Per-agent entries support optional `server`, `caCert`, `clientCert`, `clientKey`, and `sealMode` overrides. Token files and seal key files must be unique per mapped agent, and the selected host files must have no group/other permission bits (`chmod 600` is recommended). Warning-only startup preflight also detects duplicate token/seal-key material. Treat duplicate material or insecure file modes as serious rollout blockers for enabling `phoenix_resolve` / `phoenix_list` until corrected. Unknown or unmapped `ctx.agentId` values fail closed with remediation instead of falling back to a shared token.
+Per-agent entries support optional `server`, `caCert`, `clientCert`, `clientKey`, and `sealMode` overrides. Token files and seal key files must be unique per mapped agent, and the selected host files must have no group/other permission bits (`chmod 600` is recommended). Startup preflight warns about duplicate token/seal-key contents; every runtime tool call revalidates that material and fails closed until duplicates are corrected. Unknown or unmapped `ctx.agentId` values fail closed with remediation instead of falling back to a shared token.
 
 Single-identity fields (`token`, `tokenFile`, `sealKeyFile`, `defaultNamespace`, and their environment fallbacks) remain available for diagnostics/dev only. They are **not** a per-agent trust boundary and should not be used to expose live `phoenix_resolve`/`phoenix_list` to multiple agents.
 
@@ -118,7 +118,7 @@ Environment fallbacks for diagnostic single-identity mode:
 
 `sealMode: true` requires a persistent private seal key file. In per-agent mode, configure `agents.<id>.sealKeyFile` for each mapped agent; in diagnostic single-identity mode, use `sealKeyFile` or `PHOENIX_SEAL_KEY`. The plugin reads the selected agent's key file at startup/status/verify/resolve time, rejects over-broad permissions (group/other bits must be clear; `chmod 600` is recommended), derives the matching public key, and sends it as `X-Phoenix-Seal-Key` on `phoenix_resolve` requests. Tool output stays opaque as `PHOENIX_SEALED:*`; the plugin does not return plaintext values in sealed mode.
 
-Before live use, register each agent's derived public seal key with Phoenix for that agent identity. A configured key file alone is not enough if Phoenix has no registered public key. `openclaw phoenix verify` is a diagnostic shared-identity helper; live per-agent access still depends on Phoenix-side public-key registration and policy for each runtime identity. For CT120, keep the conservative rollout policy: do not deploy or enable broad `phoenix_resolve`/`phoenix_list` access until scoped per-agent credentials, registered public seal keys, and tool allowlists have been validated.
+Before live use, register each agent's derived public seal key with Phoenix for that agent identity. A configured key file alone is not enough if Phoenix has no registered public key. `openclaw phoenix verify` is a diagnostic shared-identity helper; when per-agent mappings use top-level `sealMode: true`, its top-level diagnostic identity must also configure its own `sealKeyFile` (or `PHOENIX_SEAL_KEY`). Per-agent `agents.<id>.sealKeyFile` values are not reused by the CLI. Live per-agent access still depends on Phoenix-side public-key registration and policy for each runtime identity. For CT120, keep the conservative rollout policy: do not deploy or enable broad `phoenix_resolve`/`phoenix_list` access until scoped per-agent credentials, registered public seal keys, and tool allowlists have been validated.
 
 ## Development
 
@@ -140,7 +140,7 @@ The smoke uses `OPENCLAW_REPO` when set, otherwise `/mnt/projects/openclaw`. If 
 
 Before parent release approval/publish:
 
-- Confirm the package source and version/tag. Suggested first package release line: `0.2.0` or the next Phoenix-aligned version chosen by the parent release plan.
+- Bump the development version in `package.json` from `0.1.1` to the parent-approved release version before publishing, then confirm the matching version/tag. Suggested first package release line: `0.2.0` or the next Phoenix-aligned version chosen by the parent release plan; do not publish the current `0.1.1` package metadata.
 - Confirm/set an approved public repository or ClawHub source (`--source-repo`, `--source-commit`, `--source-ref`) before publishing. This package intentionally omits `repository` metadata until parent release approval so public package metadata does not point at a private/internal source.
 - Confirm package metadata (`name`, `license`, `files`, `exports`, `openclaw.install`, `openclaw.compat`, `openclaw.build`) and inspect package contents with `npm pack --dry-run`.
 - Run `npm test`, `npm run smoke:openclaw`, and `git diff --check` from this repo.
