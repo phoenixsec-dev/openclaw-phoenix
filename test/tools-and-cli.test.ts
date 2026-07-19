@@ -401,6 +401,28 @@ test("per-agent mapping fails closed for unknown or unmapped runtime agents", as
   assert.doesNotMatch(text, /openclaw-phoenix-main-token-not-read/);
 });
 
+test("per-agent mapping fails closed for agent ids that name Object.prototype members", async () => {
+  const config = {
+    server: "http://127.0.0.1:1",
+    sealMode: false,
+    agents: {
+      main: {
+        tokenFile: "/tmp/openclaw-phoenix-main-token-not-read",
+        defaultNamespace: "main-ns",
+      },
+    },
+  };
+
+  for (const agentId of ["constructor", "toString", "hasOwnProperty", "__proto__"]) {
+    const result = await createPhoenixResolveTool(config, { agentId }).execute("tool-proto", {
+      refs: ["key"],
+    });
+    const details = result.details as { ok: boolean; error?: { code?: string } };
+    assert.equal(details.ok, false, `expected fail-closed for agentId ${agentId}`);
+    assert.equal(details.error?.code, "OPENCLAW_AGENT_IDENTITY_UNMAPPED", `agentId ${agentId}`);
+  }
+});
+
 test("tool handlers return structured remediation errors", async () => {
   await withServer(async (_req, res) => {
     res.statusCode = 403;

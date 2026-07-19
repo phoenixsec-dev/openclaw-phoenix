@@ -187,7 +187,9 @@ function readAgentIdentityMappings(
     throw new Error("phoenix-secrets agents must configure at least one OpenClaw agent identity");
   }
 
-  const agents: Record<string, PhoenixAgentIdentityConfig> = {};
+  // Null prototype so runtime agentId lookups can never resolve to inherited
+  // Object.prototype members (e.g. an agent named "constructor").
+  const agents: Record<string, PhoenixAgentIdentityConfig> = Object.create(null);
   const tokenFileOwners = new Map<string, string>();
   const sealKeyFileOwners = new Map<string, string>();
   for (const [agentId, rawAgent] of entries) {

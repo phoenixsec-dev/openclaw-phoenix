@@ -40,7 +40,10 @@ function getMappedIdentity(
   config: PhoenixPluginConfig,
   agentId: string,
 ): PhoenixAgentIdentityConfig | undefined {
-  return config.agents?.[agentId];
+  if (!config.agents || !Object.hasOwn(config.agents, agentId)) {
+    return undefined;
+  }
+  return config.agents[agentId];
 }
 
 function effectiveClientConfig(
