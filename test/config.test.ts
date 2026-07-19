@@ -117,7 +117,7 @@ test("resolvePhoenixPluginConfig accepts per-agent identity mappings without top
 });
 
 test("resolvePhoenixPluginConfig rejects invalid agent ids and accepts free-form valid ids", () => {
-  for (const badAgentId of ["Bad-Caps", "1starts-with-digit", "has space", "has/slash", "-leading-dash", ""]) {
+  for (const badAgentId of ["Bad-Caps", "has space", "has/slash", "-leading-dash", "_leading-underscore", ""]) {
     assert.throws(
       () =>
         resolvePhoenixPluginConfig(
@@ -138,6 +138,7 @@ test("resolvePhoenixPluginConfig rejects invalid agent ids and accepts free-form
     );
   }
 
+  // Digit-leading ids are valid: OpenClaw's VALID_ID_RE accepts them.
   const config = resolvePhoenixPluginConfig(
     {
       server: "http://phoenix:9090",
@@ -147,11 +148,45 @@ test("resolvePhoenixPluginConfig rejects invalid agent ids and accepts free-form
           tokenFile: "./custom.token",
           defaultNamespace: "openclaw-custom",
         },
+        "67agent": {
+          tokenFile: "./67agent.token",
+          defaultNamespace: "openclaw-67",
+        },
       },
     },
     { env: {} },
   );
   assert.equal(config.agents?.["custom-agent_7"]?.defaultNamespace, "openclaw-custom");
+  assert.equal(config.agents?.["67agent"]?.defaultNamespace, "openclaw-67");
+});
+
+test("resolvePhoenixPluginConfig rejects traversal-capable default namespaces", () => {
+  for (const badNamespace of ["../status", "x/../status", "ns/sub", "..", ".", "a b"]) {
+    for (const target of ["top-level", "per-agent"] as const) {
+      assert.throws(
+        () =>
+          resolvePhoenixPluginConfig(
+            target === "top-level"
+              ? {
+                  server: "http://phoenix:9090",
+                  token: "t",
+                  sealMode: false,
+                  defaultNamespace: badNamespace,
+                }
+              : {
+                  server: "http://phoenix:9090",
+                  sealMode: false,
+                  agents: {
+                    main: { tokenFile: "./main.token", defaultNamespace: badNamespace },
+                  },
+                },
+            { env: {} },
+          ),
+        /single namespace segment/,
+        `expected ${target} namespace ${JSON.stringify(badNamespace)} to be rejected`,
+      );
+    }
+  }
 });
 
 test("resolvePhoenixPluginConfig rejects duplicate per-agent token files and seal keys", () => {

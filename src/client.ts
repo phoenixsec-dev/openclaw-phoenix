@@ -5,6 +5,7 @@ import type { Socket } from "node:net";
 import type { PeerCertificate, TLSSocket } from "node:tls";
 import { normalizeListPrefix, normalizePhoenixRef } from "./refs.ts";
 import { buildSealHeader } from "./seal.ts";
+import { readCredentialFile } from "./secure-file.ts";
 import { readPhoenixTokenFile } from "./token.ts";
 import type { PhoenixClientConfig } from "./config.ts";
 import { PhoenixAccessDeniedError } from "./errors.ts";
@@ -356,7 +357,9 @@ export class PhoenixClient {
         ...(this.config.clientCert
           ? { cert: await fs.readFile(this.config.clientCert, "utf8") }
           : {}),
-        ...(this.config.clientKey ? { key: await fs.readFile(this.config.clientKey, "utf8") } : {}),
+        ...(this.config.clientKey
+          ? { key: await readCredentialFile(this.config.clientKey, "Phoenix client key") }
+          : {}),
       }))();
     }
     return this.tlsMaterialPromise;

@@ -6,8 +6,12 @@ import https from "node:https";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const DEFAULT_PHOENIX_SRC = "/mnt/projects/phoenix";
+// Sibling-checkout convention: ../phoenix next to this repo, like the smoke
+// test's ../openclaw default. Override with PHOENIX_SRC or PHOENIX_SERVER_BIN.
+const REPO_ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
+const DEFAULT_PHOENIX_SRC = path.resolve(REPO_ROOT, "../phoenix");
 const GO_BIN = process.env.GO ?? "go";
 const HEALTH_WAIT_ATTEMPTS = 100;
 const HEALTH_WAIT_INTERVAL_MS = 100;

@@ -31,17 +31,18 @@ export class PhoenixIdentityMaterialError extends PhoenixAccessDeniedError {
   readonly agentId: string;
 
   constructor(params: { agentId: string; material: "token" | "seal key"; cause: unknown }) {
-    const causeMessage =
-      params.cause instanceof Error ? params.cause.message : String(params.cause);
     super({
       code: "PHOENIX_IDENTITY_MATERIAL_UNREADABLE",
       message: `phoenix-secrets agents.${params.agentId} ${params.material} material could not be validated`,
+      // Deliberately omits the underlying path/filesystem error: this detail is
+      // model/tool-visible and must not leak another agent's credential paths.
       detail:
-        `Cross-agent identity validation could not read agents.${params.agentId} ${params.material} material: ${causeMessage}`,
+        `Cross-agent identity validation could not read agents.${params.agentId} ${params.material} material (missing, unreadable, insecure permissions, or invalid contents).`,
       remediation:
-        "Fix the file path, permissions, and contents for that mapped agent; every mapped Phoenix identity must be readable before Phoenix tools can run for any agent.",
+        "Fix the file path, permissions, and contents for that mapped agent (specifics are in the gateway startup preflight warning); every mapped Phoenix identity must be readable before Phoenix tools can run for any agent.",
     });
     this.agentId = params.agentId;
+    this.cause = params.cause;
   }
 }
 

@@ -281,7 +281,7 @@ Before packaging, run the non-secret OpenClaw plugin load/registration smoke fro
 npm run smoke:openclaw
 ```
 
-It uses `OPENCLAW_REPO` or `/mnt/projects/openclaw` to check the documented SDK subpath and captures plugin tool/service/CLI registration with a stubbed OpenClaw API. It does not read live Phoenix secrets.
+It uses `OPENCLAW_REPO` (or an `openclaw` checkout next to this repo) to check the documented SDK subpath and captures plugin tool/service/CLI registration with a stubbed OpenClaw API. It does not read live Phoenix secrets.
 
 For runtime config refs, run:
 
@@ -312,7 +312,7 @@ Key points:
 - the mTLS Compose example overrides `PHOENIX_SERVER` to an `https://` URL because client CA/certificate/key material is only applied to HTTPS requests
 - mount only the minimum token/cert material into the gateway
 - prefer per-agent token files over env vars for live runtime tools
-- host token and seal-key files must have no group/other permission bits before mounting (`chmod 600` recommended); `:ro` bind mounts alone do not satisfy the plugin's checks
+- host token, seal-key, and mTLS client-key files must have no group/other permission bits before mounting (`chmod 600` recommended); `:ro` bind mounts alone do not satisfy the plugin's checks
 - do not bake secrets into images or commit them to files
 - do not put raw `phoenix://...` strings into built-in OpenClaw env/config fields unless you are using a real SecretRef-backed provider path
 

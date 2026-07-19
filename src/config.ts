@@ -1,4 +1,8 @@
-export const PHOENIX_OPENCLAW_AGENT_ID_PATTERN = "^[a-z][a-z0-9_-]{0,63}$";
+import { isValidPhoenixNamespace } from "./refs.ts";
+
+// Mirrors OpenClaw's VALID_ID_RE (src/routing/session-key.ts) after its
+// normalizeAgentId lowercasing.
+export const PHOENIX_OPENCLAW_AGENT_ID_PATTERN = "^[a-z0-9][a-z0-9_-]{0,63}$";
 const PHOENIX_OPENCLAW_AGENT_ID_RE = new RegExp(PHOENIX_OPENCLAW_AGENT_ID_PATTERN);
 
 export type PhoenixClientConfig = {
@@ -168,6 +172,11 @@ function normalizePhoenixServer(server: string, label: string): string {
 function validateDefaultNamespace(defaultNamespace: string, label: string): void {
   if (defaultNamespace.includes(":")) {
     throw new Error(`${label} must be a namespace name, not a URI`);
+  }
+  if (!isValidPhoenixNamespace(defaultNamespace)) {
+    throw new Error(
+      `${label} must be a single namespace segment (letters, digits, '._-', no '/' or '.'/'..')`,
+    );
   }
 }
 

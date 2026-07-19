@@ -8,6 +8,18 @@ function hasUnsafePathSegments(path: string): boolean {
     .some((segment) => segment === "" || segment === "." || segment === "..");
 }
 
+export function isValidPhoenixNamespace(namespace: string): boolean {
+  return /^[A-Za-z0-9._-]+$/.test(namespace) && namespace !== "." && namespace !== "..";
+}
+
+function assertSafeDefaultNamespace(defaultNamespace: string): void {
+  if (!isValidPhoenixNamespace(defaultNamespace)) {
+    throw new Error(
+      `defaultNamespace must be a single namespace segment (letters, digits, '._-'): ${defaultNamespace}`,
+    );
+  }
+}
+
 export function isPhoenixRef(value: string): boolean {
   const trimmed = value.trim();
   if (!PHOENIX_REF_RE.test(trimmed)) {
@@ -52,7 +64,11 @@ export function refToSecretPath(refOrPath: string, defaultNamespace?: string): s
 export function normalizeListPrefix(value: string | undefined, defaultNamespace?: string): string {
   const trimmed = value?.trim();
   if (!trimmed) {
-    return defaultNamespace ? `${defaultNamespace}/` : "";
+    if (!defaultNamespace) {
+      return "";
+    }
+    assertSafeDefaultNamespace(defaultNamespace);
+    return `${defaultNamespace}/`;
   }
   if (trimmed.startsWith(PHOENIX_REF_PREFIX)) {
     return `${refToSecretPath(trimmed)}/`.replace(/\/+/g, "/");
@@ -67,6 +83,7 @@ export function normalizeListPrefix(value: string | undefined, defaultNamespace?
     );
   }
   if (defaultNamespace && !trimmed.includes("/")) {
+    assertSafeDefaultNamespace(defaultNamespace);
     return `${defaultNamespace}/${trimmed}`.replace(/\/?$/, "/");
   }
   return trimmed.replace(/\/?$/, "/");

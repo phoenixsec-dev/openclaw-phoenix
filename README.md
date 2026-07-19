@@ -98,7 +98,7 @@ Recommended live configuration maps trusted OpenClaw runtime agent ids to separa
 }
 ```
 
-Per-agent entries support optional `server`, `caCert`, `clientCert`, `clientKey`, and `sealMode` overrides. Token files and seal key files must be unique per mapped agent, and the selected host files must have no group/other permission bits (`chmod 600` is recommended). Startup preflight warns about duplicate token/seal-key contents; every runtime tool call revalidates that material and fails closed until duplicates are corrected. Unknown or unmapped `ctx.agentId` values fail closed with remediation instead of falling back to a shared token.
+Per-agent entries support optional `server`, `caCert`, `clientCert`, `clientKey`, and `sealMode` overrides. Token files and seal key files must be unique per mapped agent, and the selected host token, seal key, and mTLS client key files must have no group/other permission bits (`chmod 600` is recommended). Startup preflight warns about duplicate token/seal-key contents; every runtime tool call revalidates that material and fails closed until duplicates are corrected. Unknown or unmapped `ctx.agentId` values fail closed with remediation instead of falling back to a shared token.
 
 Single-identity fields (`token`, `tokenFile`, `sealKeyFile`, `defaultNamespace`, and their environment fallbacks) remain available for diagnostics/dev only. They are **not** a per-agent trust boundary and should not be used to expose live `phoenix_resolve`/`phoenix_list` to multiple agents.
 
@@ -134,7 +134,7 @@ Run the OpenClaw plugin load/registration smoke explicitly:
 npm run smoke:openclaw
 ```
 
-The smoke uses `OPENCLAW_REPO` when set, otherwise `/mnt/projects/openclaw`. If the local OpenClaw checkout is absent it reports a TAP skip with that instruction. It imports the plugin through the documented `openclaw/plugin-sdk/plugin-entry` seam with a smoke SDK shim, verifies the local OpenClaw checkout exposes that SDK subpath, captures tool/service/CLI registration, and does not read real Phoenix secrets or deploy anything.
+The smoke uses `OPENCLAW_REPO` when set, otherwise an `openclaw` checkout next to this repo. If the local OpenClaw checkout is absent it reports a TAP skip with that instruction. It imports the plugin through the documented `openclaw/plugin-sdk/plugin-entry` seam, preferring the checkout's real `definePluginEntry` and falling back to a smoke SDK shim when the checkout cannot be loaded standalone (set `OPENCLAW_SMOKE_REQUIRE_REAL_SDK=1` to fail instead of falling back). It verifies the checkout exposes that SDK subpath, captures tool/service/CLI registration, and does not read real Phoenix secrets or deploy anything.
 
 ### Integration tests
 
@@ -147,9 +147,9 @@ This tier boots a throwaway local `phoenix-server` (fresh store under `os.tmpdir
 Server acquisition, in order:
 
 - `PHOENIX_SERVER_BIN` — path to a prebuilt `phoenix-server` binary (`PHOENIX_CLI_BIN` for the `phoenix` CLI; defaults to a `phoenix` binary next to `PHOENIX_SERVER_BIN`).
-- Otherwise it builds both binaries from a Phoenix source checkout at `PHOENIX_SRC` (default `/mnt/projects/phoenix`) using the Go toolchain from `GO` (default `go` on `PATH`).
+- Otherwise it builds both binaries from a Phoenix source checkout at `PHOENIX_SRC` (default: a `phoenix` checkout next to this repo) using the Go toolchain from `GO` (default `go` on `PATH`).
 
-If neither a prebuilt binary nor a buildable checkout is available, the suite reports a TAP skip with those instructions instead of failing. `npm test` does not run this tier and stays fully offline.
+If neither a prebuilt binary nor a buildable checkout is available, the suite reports a TAP skip with those instructions instead of failing; set `PHOENIX_INTEGRATION_REQUIRED=1` to turn that skip into a failure for CI/release gates. `npm test` does not run this tier and stays fully offline.
 
 ## Package release checklist
 

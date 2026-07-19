@@ -6,7 +6,8 @@ import { registerHooks } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const REPO_ROOT = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
-const OPENCLAW_REPO = path.resolve(process.env.OPENCLAW_REPO ?? "/mnt/projects/openclaw");
+// Sibling-checkout convention: ../openclaw next to this repo unless overridden.
+const OPENCLAW_REPO = path.resolve(process.env.OPENCLAW_REPO ?? path.resolve(REPO_ROOT, "../openclaw"));
 const SDK_SPECIFIER = "openclaw/plugin-sdk/plugin-entry";
 const LEGACY_CORE_SPECIFIER = "openclaw/plugin-sdk/core";
 const EXPECTED_PLUGIN_ID = "phoenix-secrets";
@@ -270,6 +271,15 @@ async function loadPluginEntry(t: { diagnostic: (message: string) => void }): Pr
     } catch (error) {
       if (mode === "real") {
         lastRealError = error;
+        // Guard against false confidence from the stub: strict mode for CI or
+        // environments where the real SDK is expected to load.
+        if (process.env.OPENCLAW_SMOKE_REQUIRE_REAL_SDK) {
+          throw new Error(
+            `OPENCLAW_SMOKE_REQUIRE_REAL_SDK is set but the real plugin-sdk import failed: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
         t.diagnostic(
           `real plugin-sdk import failed, falling back to stub: ${
             error instanceof Error ? error.message : String(error)

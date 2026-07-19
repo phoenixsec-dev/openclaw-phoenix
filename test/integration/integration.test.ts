@@ -40,7 +40,15 @@ function decodeSealedToken(token: string): Record<string, unknown> {
 const availability = detectPhoenixAvailability();
 
 if (!availability.ok) {
-  test("Phoenix server integration", { skip: availability.reason }, () => {});
+  if (process.env.PHOENIX_INTEGRATION_REQUIRED) {
+    test("Phoenix server integration", () => {
+      assert.fail(
+        `PHOENIX_INTEGRATION_REQUIRED is set but Phoenix is unavailable: ${availability.reason}`,
+      );
+    });
+  } else {
+    test("Phoenix server integration", { skip: availability.reason }, () => {});
+  }
 } else {
   test("Phoenix server integration", async (t) => {
     const binaries = await ensurePhoenixBinaries(availability);
@@ -423,7 +431,17 @@ if (!availability.ok) {
       const status = toolDetails(await statusTool.execute("call-mtls-status", {}));
       assert.equal(status.ok, true);
       assert.equal(status.authMode, "mtls");
-      assert.ok(status.tls, "phoenix_status reports the TLS peer certificate over https");
+      const tls = status.tls as
+        | { fingerprint256?: string; validNow?: boolean; subject?: Record<string, string> }
+        | undefined;
+      assert.ok(tls, "phoenix_status reports the TLS peer certificate over https");
+      assert.match(
+        tls.fingerprint256 ?? "",
+        /^([0-9A-F]{2}:){31}[0-9A-F]{2}$/i,
+        "peer certificate fingerprint256 is a SHA-256 fingerprint",
+      );
+      assert.equal(tls.validNow, true, "server certificate is currently valid");
+      assert.ok(tls.subject && Object.keys(tls.subject).length > 0, "peer certificate has a subject");
 
       const tool = createPhoenixResolveTool(mtlsConfig, { agentId: "main" });
       const result = toolDetails(await tool.execute("call-mtls-resolve", { refs: ["key"] }));

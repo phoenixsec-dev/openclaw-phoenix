@@ -62,6 +62,12 @@ test("normalizeListPrefix handles empty, bare, and phoenix:// inputs", () => {
   assert.equal(normalizeListPrefix("phoenix://openclaw/svc"), "openclaw/svc/");
 });
 
+test("normalizeListPrefix rejects traversal-capable default namespaces", () => {
+  assert.throws(() => normalizeListPrefix(undefined, "../status"), /single namespace segment/);
+  assert.throws(() => normalizeListPrefix("key", "x/../status"), /single namespace segment/);
+  assert.throws(() => normalizeListPrefix(undefined, ".."), /single namespace segment/);
+});
+
 test("normalizeListPrefix rejects traversal and URL metacharacters", () => {
   assert.throws(() => normalizeListPrefix("/svc"), /must not start with '\/'/);
   assert.throws(() => normalizeListPrefix("../../v1/status", "openclaw"), /invalid list prefix/);
