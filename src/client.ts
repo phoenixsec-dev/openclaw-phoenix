@@ -570,9 +570,10 @@ export class PhoenixClient {
 
   async list(prefix?: string, options: { caller?: PhoenixCallerContext } = {}) {
     const normalizedPrefix = normalizeListPrefix(prefix, this.config.defaultNamespace);
+    const encodedPrefix = normalizedPrefix.split("/").map(encodeURIComponent).join("/");
     const response = await this.requestJson({
       method: "GET",
-      pathname: `/v1/secrets/${normalizedPrefix}`,
+      pathname: `/v1/secrets/${encodedPrefix}`,
       toolName: "phoenix_list",
       caller: options.caller,
     });
