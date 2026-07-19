@@ -406,6 +406,39 @@ test("runtime tools fail closed when mapped agents share token or seal key mater
   });
 });
 
+test("runtime tools report which agent's identity material is unreadable", async () => {
+  await withAgentIdentityFiles(async (files) => {
+    const config = {
+      server: "http://127.0.0.1:1",
+      sealMode: false,
+      agents: {
+        main: {
+          tokenFile: files.mainTokenFile,
+          defaultNamespace: "main-ns",
+        },
+        kit: {
+          tokenFile: files.kitTokenFile,
+          defaultNamespace: "kit-ns",
+        },
+      },
+    };
+
+    await fs.unlink(files.kitTokenFile);
+    const result = await createPhoenixResolveTool(config, { agentId: "main" }).execute(
+      "tool-resolve",
+      { refs: ["key"] },
+    );
+    const details = result.details as {
+      ok: boolean;
+      error?: { type?: string; code?: string; detail?: string };
+    };
+    assert.equal(details.ok, false);
+    assert.equal(details.error?.type, "access_denied");
+    assert.equal(details.error?.code, "PHOENIX_IDENTITY_MATERIAL_UNREADABLE");
+    assert.match(details.error?.detail ?? "", /agents\.kit token material/);
+  });
+});
+
 test("per-agent mapping fails closed for unknown or unmapped runtime agents", async () => {
   const resolveTool = createPhoenixResolveTool(
     {

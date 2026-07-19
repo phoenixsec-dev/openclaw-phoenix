@@ -4,39 +4,24 @@ import type {
   PhoenixPluginConfig,
 } from "./config.ts";
 import type { PhoenixCallerContext } from "./tool-helpers.ts";
+import { PhoenixAccessDeniedError } from "./errors.ts";
 
 const PER_AGENT_REMEDIATION =
   "Configure plugins.entries[\"phoenix-secrets\"].config.agents.<agentId> with tokenFile, sealKeyFile, and defaultNamespace for each OpenClaw agent that may use Phoenix tools, or remove Phoenix tools from that agent's allowlist.";
 
-export class PhoenixIdentityError extends Error {
-  readonly status = 403;
-  readonly type = "access_denied" as const;
-  readonly code: "OPENCLAW_AGENT_IDENTITY_MISSING" | "OPENCLAW_AGENT_IDENTITY_UNMAPPED";
-  readonly detail: string;
-  readonly remediation: string;
-
+export class PhoenixIdentityError extends PhoenixAccessDeniedError {
   constructor(params: {
-    code: PhoenixIdentityError["code"];
+    code: "OPENCLAW_AGENT_IDENTITY_MISSING" | "OPENCLAW_AGENT_IDENTITY_UNMAPPED";
     message: string;
     detail: string;
     remediation?: string;
   }) {
-    super(params.message);
-    this.name = "PhoenixIdentityError";
-    this.code = params.code;
-    this.detail = params.detail;
-    this.remediation = params.remediation ?? PER_AGENT_REMEDIATION;
-  }
-
-  toJSON() {
-    return {
-      type: this.type,
-      status: this.status,
-      error: this.message,
-      code: this.code,
-      detail: this.detail,
-      remediation: this.remediation,
-    };
+    super({
+      code: params.code,
+      message: params.message,
+      detail: params.detail,
+      remediation: params.remediation ?? PER_AGENT_REMEDIATION,
+    });
   }
 }
 

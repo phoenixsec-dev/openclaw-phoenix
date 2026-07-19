@@ -1,5 +1,5 @@
-import fs from "node:fs/promises";
 import { createHash, createPrivateKey, createPublicKey } from "node:crypto";
+import { readCredentialFile } from "./secure-file.ts";
 
 const SEAL_KEY_SIZE_BYTES = 32;
 const X25519_PRIVATE_KEY_DER_PREFIX = Buffer.from("302e020100300506032b656e04220420", "hex");
@@ -44,17 +44,7 @@ function deriveSealPublicKey(privateKey: Buffer, source: string): Buffer {
 }
 
 async function loadSealPrivateKey(sealKeyFile: string): Promise<Buffer> {
-  const stat = await fs.stat(sealKeyFile);
-  if (!stat.isFile()) {
-    throw new Error(`Phoenix seal key path must be a file: ${sealKeyFile}`);
-  }
-  if ((stat.mode & 0o077) !== 0) {
-    throw new Error(
-      `Phoenix seal key file has insecure permissions: ${sealKeyFile} must not be readable, writable, or executable by group or others`,
-    );
-  }
-
-  const rawPrivateKey = await fs.readFile(sealKeyFile, "utf8");
+  const rawPrivateKey = await readCredentialFile(sealKeyFile, "Phoenix seal key");
   return decodeSealPrivateKey(rawPrivateKey, sealKeyFile);
 }
 

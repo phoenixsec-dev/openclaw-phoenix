@@ -1,18 +1,8 @@
-import fs from "node:fs/promises";
 import { createHash } from "node:crypto";
+import { readCredentialFile } from "./secure-file.ts";
 
 export async function readPhoenixTokenFile(tokenFile: string): Promise<string> {
-  const stat = await fs.stat(tokenFile);
-  if (!stat.isFile()) {
-    throw new Error(`Phoenix token path must be a file: ${tokenFile}`);
-  }
-  if ((stat.mode & 0o077) !== 0) {
-    throw new Error(
-      `Phoenix token file has insecure permissions: ${tokenFile} must not be readable, writable, or executable by group or others`,
-    );
-  }
-
-  const raw = await fs.readFile(tokenFile, "utf8");
+  const raw = await readCredentialFile(tokenFile, "Phoenix token");
   const token = raw.trim();
   if (!token) {
     throw new Error(`Phoenix token file is empty: ${tokenFile}`);
