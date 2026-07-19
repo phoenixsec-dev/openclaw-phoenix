@@ -8,8 +8,14 @@ function hasUnsafePathSegments(path: string): boolean {
     .some((segment) => segment === "" || segment === "." || segment === "..");
 }
 
+// Single-source namespace constraint, shared by the runtime validation and the
+// JSON schemas so OpenClaw's manifest validation rejects the same values the
+// plugin rejects at registration. The lookahead excludes '.' and '..'.
+export const PHOENIX_NAMESPACE_PATTERN = "^(?!\\.{1,2}$)[A-Za-z0-9._-]+$";
+const PHOENIX_NAMESPACE_RE = new RegExp(PHOENIX_NAMESPACE_PATTERN);
+
 export function isValidPhoenixNamespace(namespace: string): boolean {
-  return /^[A-Za-z0-9._-]+$/.test(namespace) && namespace !== "." && namespace !== "..";
+  return PHOENIX_NAMESPACE_RE.test(namespace);
 }
 
 function assertSafeDefaultNamespace(defaultNamespace: string): void {

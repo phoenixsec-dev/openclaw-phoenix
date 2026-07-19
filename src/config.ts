@@ -1,4 +1,4 @@
-import { isValidPhoenixNamespace } from "./refs.ts";
+import { PHOENIX_NAMESPACE_PATTERN, isValidPhoenixNamespace } from "./refs.ts";
 
 // Mirrors OpenClaw's VALID_ID_RE (src/routing/session-key.ts) after its
 // normalizeAgentId lowercasing.
@@ -54,7 +54,7 @@ const phoenixAgentIdentityConfigJsonSchema = {
     caCert: { type: "string" },
     clientCert: { type: "string" },
     clientKey: { type: "string" },
-    defaultNamespace: { type: "string" },
+    defaultNamespace: { type: "string", pattern: PHOENIX_NAMESPACE_PATTERN },
     sealMode: { type: "boolean" },
   },
 };
@@ -70,7 +70,7 @@ export const phoenixPluginConfigJsonSchema = {
     caCert: { type: "string" },
     clientCert: { type: "string" },
     clientKey: { type: "string" },
-    defaultNamespace: { type: "string" },
+    defaultNamespace: { type: "string", pattern: PHOENIX_NAMESPACE_PATTERN },
     sealMode: { type: "boolean" },
     agents: {
       type: "object",

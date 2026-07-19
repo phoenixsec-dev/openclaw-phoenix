@@ -160,6 +160,29 @@ test("resolvePhoenixPluginConfig rejects invalid agent ids and accepts free-form
   assert.equal(config.agents?.["67agent"]?.defaultNamespace, "openclaw-67");
 });
 
+test("JSON schema constrains defaultNamespace the same way the runtime does", () => {
+  const schema = phoenixPluginConfigSchema.jsonSchema as {
+    properties: {
+      defaultNamespace: { pattern?: string };
+      agents: { patternProperties: Record<string, { properties: { defaultNamespace: { pattern?: string } } }> };
+    };
+  };
+  const topLevelPattern = schema.properties.defaultNamespace.pattern;
+  const agentIdentitySchema = Object.values(schema.properties.agents.patternProperties)[0];
+  const perAgentPattern = agentIdentitySchema.properties.defaultNamespace.pattern;
+
+  assert.ok(topLevelPattern, "top-level defaultNamespace schema must declare a pattern");
+  assert.equal(perAgentPattern, topLevelPattern, "per-agent pattern must match top-level");
+
+  const patternRe = new RegExp(topLevelPattern);
+  for (const rejected of [".", "..", "../status", "ns/sub", "x/../status", "a b", ""]) {
+    assert.equal(patternRe.test(rejected), false, `schema pattern must reject ${JSON.stringify(rejected)}`);
+  }
+  for (const accepted of ["openclaw", "ns.prod", "team-a_1", ".hidden"]) {
+    assert.equal(patternRe.test(accepted), true, `schema pattern must accept ${JSON.stringify(accepted)}`);
+  }
+});
+
 test("resolvePhoenixPluginConfig rejects traversal-capable default namespaces", () => {
   for (const badNamespace of ["../status", "x/../status", "ns/sub", "..", ".", "a b"]) {
     for (const target of ["top-level", "per-agent"] as const) {
