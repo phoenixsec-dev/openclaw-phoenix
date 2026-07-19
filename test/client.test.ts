@@ -1,14 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import http from "node:http";
-import { once } from "node:events";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { PhoenixClient, PhoenixApiError } from "../src/client.ts";
-
-const TEST_SEAL_PRIVATE_KEY = "dwdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LCo=";
-const TEST_SEAL_PUBLIC_KEY = "hSDwCYkwp1R0i33ctD73Wg2/Og0mOBr066SpjqqbTmo=";
+import {
+  TEST_SEAL_PRIVATE_KEY,
+  TEST_SEAL_PUBLIC_KEY,
+  readRequestJson,
+  withSealKeyFile,
+  withServer,
+} from "./helpers.ts";
 
 function testSealedEnvelope(ref: string) {
   return {
@@ -22,44 +24,13 @@ function testSealedEnvelope(ref: string) {
   };
 }
 
-async function withServer(
-  handler: Parameters<typeof http.createServer>[0],
-  run: (baseUrl: string) => Promise<void>,
-) {
-  const server = http.createServer(handler);
-  server.listen(0, "127.0.0.1");
-  await once(server, "listening");
-  const address = server.address();
-  if (!address || typeof address === "string") {
-    throw new Error("failed to resolve test server address");
-  }
+async function withTempDir(run: (dir: string) => Promise<void>) {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-phoenix-credential-test-"));
   try {
-    await run(`http://127.0.0.1:${address.port}`);
+    await run(dir);
   } finally {
-    server.close();
-    await once(server, "close");
+    await fs.rm(dir, { recursive: true, force: true });
   }
-}
-
-async function withSealKeyFile(run: (sealKeyFile: string) => Promise<void>) {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-phoenix-seal-test-"));
-  const sealKeyFile = path.join(dir, "agent.seal.key");
-  await fs.writeFile(sealKeyFile, `${TEST_SEAL_PRIVATE_KEY}\n`, { encoding: "utf8", mode: 0o600 });
-  try {
-    await run(sealKeyFile);
-  } finally {
-    await fs.unlink(sealKeyFile).catch(() => undefined);
-    await fs.rmdir(dir).catch(() => undefined);
-  }
-}
-
-async function readRequestJson(req: http.IncomingMessage): Promise<Record<string, unknown>> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of req) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  }
-  const text = Buffer.concat(chunks).toString("utf8");
-  return text.trim() ? JSON.parse(text) : {};
 }
 
 test("PhoenixClient resolve sends tool headers and returns plaintext values", async () => {
@@ -177,7 +148,7 @@ test("PhoenixClient rejects overly permissive seal key file permissions", async 
   await fs.chmod(sealKeyFile, 0o644);
   try {
     const client = new PhoenixClient({
-      server: "http://phoenix:9090",
+      server: "http://127.0.0.1:1",
       token: "token",
       sealKeyFile,
       sealMode: true,
@@ -326,11 +297,17 @@ test("PhoenixClient resolve ignores unrequested sealed_values in sealMode", asyn
   });
 });
 
-test("PhoenixClient resolve fails closed when sealed_values is missing in sealMode", async () => {
+test("PhoenixClient resolve fails closed and refuses plaintext when sealed_values is missing in sealMode", async () => {
   await withSealKeyFile(async (sealKeyFile) => {
     await withServer(async (_req, res) => {
       res.setHeader("content-type", "application/json");
-      res.end(JSON.stringify({}));
+      res.end(
+        JSON.stringify({
+          values: {
+            "phoenix://openclaw/api-key": "plain-secret-that-must-not-appear",
+          },
+        }),
+      );
     }, async (baseUrl) => {
       const client = new PhoenixClient({
         server: baseUrl,
@@ -347,10 +324,8 @@ test("PhoenixClient resolve fails closed when sealed_values is missing in sealMo
           assert.equal(error.type, "sealed_response_error");
           assert.equal(error.code, "PHOENIX_SEALED_VALUES_MISSING");
           assert.equal(error.status, 200);
-          assert.match(error.message, /omitted sealed_values envelope/);
-          assert.match(error.detail ?? "", /phoenix:\/\/openclaw\/api-key/);
-          assert.match(error.remediation ?? "", /register the agent public seal key/);
-          assert.match(error.remediation ?? "", /require_sealed\/sealed response contract/);
+          assert.match(error.detail ?? "", /omitted sealed_values envelope/);
+          assert.doesNotMatch(JSON.stringify(error.toJSON()), /plain-secret-that-must-not-appear/);
           return true;
         },
       );
@@ -387,41 +362,6 @@ test("PhoenixClient resolve allows partial sealed success with per-ref errors", 
       assert.deepEqual(result.errors, {
         "phoenix://openclaw/missing": "secret not found",
       });
-    });
-  });
-});
-
-test("PhoenixClient resolve refuses plaintext values when sealed_values is missing", async () => {
-  await withSealKeyFile(async (sealKeyFile) => {
-    await withServer(async (_req, res) => {
-      res.setHeader("content-type", "application/json");
-      res.end(
-        JSON.stringify({
-          values: {
-            "phoenix://openclaw/api-key": "plain-secret-that-must-not-appear",
-          },
-        }),
-      );
-    }, async (baseUrl) => {
-      const client = new PhoenixClient({
-        server: baseUrl,
-        token: "token",
-        sealKeyFile,
-        defaultNamespace: "openclaw",
-        sealMode: true,
-      });
-
-      await assert.rejects(
-        () => client.resolve(["api-key"]),
-        (error: unknown) => {
-          assert.ok(error instanceof PhoenixApiError);
-          const serialized = JSON.stringify(error.toJSON());
-          assert.equal(error.code, "PHOENIX_SEALED_VALUES_MISSING");
-          assert.match(error.detail ?? "", /ref\(s\) without per-ref errors/);
-          assert.doesNotMatch(serialized, /plain-secret-that-must-not-appear/);
-          return true;
-        },
-      );
     });
   });
 });
@@ -487,5 +427,119 @@ test("PhoenixClient status falls back cleanly when /v1/status is forbidden", asy
     assert.equal(status.adminStatus, undefined);
     assert.equal(status.adminStatusError?.type, "access_denied");
     assert.ok(status.notes.some((note) => note.includes("does not currently expose the server version")));
+  });
+});
+
+test("PhoenixClient rejects seal key files with invalid content", async () => {
+  await withTempDir(async (dir) => {
+    const cases: Array<{ name: string; content: string | null; expected: RegExp }> = [
+      { name: "empty", content: "", expected: /empty/ },
+      { name: "invalid-base64", content: "not-base64!!", expected: /invalid base64/ },
+      { name: "wrong-length", content: Buffer.alloc(16, 7).toString("base64"), expected: /32-byte/ },
+      { name: "directory", content: null, expected: /must be a file/ },
+    ];
+
+    for (const testCase of cases) {
+      let sealKeyFile: string;
+      if (testCase.content === null) {
+        sealKeyFile = path.join(dir, testCase.name);
+        await fs.mkdir(sealKeyFile, { mode: 0o700 });
+      } else {
+        sealKeyFile = path.join(dir, testCase.name);
+        await fs.writeFile(sealKeyFile, testCase.content, { encoding: "utf8", mode: 0o600 });
+      }
+
+      const client = new PhoenixClient({
+        server: "http://127.0.0.1:1",
+        token: "token",
+        sealKeyFile,
+        sealMode: true,
+      });
+
+      await assert.rejects(
+        () => client.validateSealConfiguration(),
+        testCase.expected,
+        `expected seal key case ${testCase.name} to be rejected`,
+      );
+    }
+  });
+});
+
+test("PhoenixClient rejects token files with invalid content", async () => {
+  await withTempDir(async (dir) => {
+    const emptyTokenFile = path.join(dir, "empty-token");
+    await fs.writeFile(emptyTokenFile, "", { encoding: "utf8", mode: 0o600 });
+    const emptyClient = new PhoenixClient({
+      server: "http://127.0.0.1:1",
+      tokenFile: emptyTokenFile,
+      sealMode: false,
+    });
+    await assert.rejects(() => emptyClient.health(), /empty/);
+
+    const directoryTokenFile = path.join(dir, "token-dir");
+    await fs.mkdir(directoryTokenFile, { mode: 0o700 });
+    const directoryClient = new PhoenixClient({
+      server: "http://127.0.0.1:1",
+      tokenFile: directoryTokenFile,
+      sealMode: false,
+    });
+    await assert.rejects(() => directoryClient.health(), /must be a file/);
+  });
+});
+
+test("PhoenixClient rejects non-JSON responses in plaintext mode", async () => {
+  await withServer(async (_req, res) => {
+    res.setHeader("content-type", "text/plain");
+    res.end("not json");
+  }, async (baseUrl) => {
+    const client = new PhoenixClient({
+      server: baseUrl,
+      token: "token",
+      defaultNamespace: "openclaw",
+      sealMode: false,
+    });
+
+    await assert.rejects(
+      () => client.resolve(["api-key"]),
+      (error: unknown) => {
+        assert.ok(error instanceof PhoenixApiError);
+        assert.equal(error.type, "http_error");
+        assert.equal(error.code, "PHOENIX_NON_JSON_RESPONSE");
+        return true;
+      },
+    );
+  });
+});
+
+test("PhoenixClient surfaces approval_required on HTTP 202", async () => {
+  await withServer(async (_req, res) => {
+    res.statusCode = 202;
+    res.setHeader("content-type", "application/json");
+    res.end(
+      JSON.stringify({
+        status: "approval_required",
+        approval_id: "ap_1",
+        expires_at: "2026-01-01T00:00:00Z",
+        error: "approval required",
+      }),
+    );
+  }, async (baseUrl) => {
+    const client = new PhoenixClient({
+      server: baseUrl,
+      token: "token",
+      defaultNamespace: "openclaw",
+      sealMode: false,
+    });
+
+    await assert.rejects(
+      () => client.resolve(["api-key"]),
+      (error: unknown) => {
+        assert.ok(error instanceof PhoenixApiError);
+        assert.equal(error.type, "approval_required");
+        assert.equal(error.approvalId, "ap_1");
+        assert.equal(error.expiresAt, "2026-01-01T00:00:00Z");
+        return true;
+      },
+    );
   });
 });

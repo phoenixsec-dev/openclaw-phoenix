@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { resolvePhoenixPluginConfig } from "../src/config.ts";
+import { phoenixPluginConfigSchema, resolvePhoenixPluginConfig } from "../src/config.ts";
 
 test("resolvePhoenixPluginConfig reads env fallbacks and resolves paths", () => {
   const config = resolvePhoenixPluginConfig(
@@ -13,6 +13,7 @@ test("resolvePhoenixPluginConfig reads env fallbacks and resolves paths", () => 
       sealMode: true,
     },
     {
+      env: {},
       resolvePath: (input) => `/resolved/${input}`,
     },
   );
@@ -68,6 +69,7 @@ test("resolvePhoenixPluginConfig accepts tokenFile auth", () => {
       tokenFile: "./phoenix-token",
     },
     {
+      env: {},
       resolvePath: (input) => `/resolved/${input}`,
     },
   );
@@ -248,4 +250,109 @@ test("resolvePhoenixPluginConfig rejects missing auth", () => {
       ),
     /requires token auth, tokenFile auth, per-agent agents config, or both clientCert and clientKey/,
   );
+});
+
+test("resolvePhoenixPluginConfig rejects malformed configs", () => {
+  const cases: Array<{ name: string; config: Record<string, unknown>; expected: RegExp }> = [
+    {
+      name: "invalid server URL",
+      config: { server: "not-a-url", token: "t" },
+      expected: /must be a valid URL/,
+    },
+    {
+      name: "non-http server protocol",
+      config: { server: "ftp://x", token: "t" },
+      expected: /must use http:\/\/ or https:\/\//,
+    },
+    {
+      name: "per-agent invalid server",
+      config: {
+        server: "http://phoenix:9090",
+        sealMode: false,
+        agents: {
+          main: { server: "not-a-url", tokenFile: "./main.token", defaultNamespace: "main-ns" },
+        },
+      },
+      expected: /agents\.main\.server must be a valid URL/,
+    },
+    {
+      name: "top-level defaultNamespace containing a colon",
+      config: { server: "http://phoenix:9090", token: "t", defaultNamespace: "phoenix://ns" },
+      expected: /must be a namespace name, not a URI/,
+    },
+    {
+      name: "per-agent defaultNamespace containing a colon",
+      config: {
+        server: "http://phoenix:9090",
+        sealMode: false,
+        agents: {
+          main: { tokenFile: "./main.token", defaultNamespace: "phoenix://ns" },
+        },
+      },
+      expected: /agents\.main\.defaultNamespace must be a namespace name, not a URI/,
+    },
+    {
+      name: "top-level mTLS half-pair",
+      config: { server: "http://phoenix:9090", token: "t", clientCert: "./client.crt" },
+      expected: /mTLS requires both clientCert and clientKey/,
+    },
+    {
+      name: "per-agent mTLS half-pair",
+      config: {
+        server: "http://phoenix:9090",
+        sealMode: false,
+        agents: {
+          main: {
+            tokenFile: "./main.token",
+            defaultNamespace: "main-ns",
+            clientCert: "./main.crt",
+          },
+        },
+      },
+      expected: /agents\.main mTLS override requires both clientCert and clientKey/,
+    },
+    {
+      name: "missing per-agent defaultNamespace",
+      config: {
+        server: "http://phoenix:9090",
+        sealMode: false,
+        agents: {
+          main: { tokenFile: "./main.token" },
+        },
+      },
+      expected: /agents\.main\.defaultNamespace is required/,
+    },
+    {
+      name: "empty agents object",
+      config: { server: "http://phoenix:9090", agents: {} },
+      expected: /agents must configure at least one OpenClaw agent identity/,
+    },
+    {
+      name: "non-object agents",
+      config: { server: "http://phoenix:9090", agents: "nope" },
+      expected: /agents must be an object/,
+    },
+  ];
+
+  for (const testCase of cases) {
+    assert.throws(
+      () => resolvePhoenixPluginConfig(testCase.config, { env: {} }),
+      testCase.expected,
+      `expected config case "${testCase.name}" to be rejected`,
+    );
+  }
+});
+
+test("phoenixPluginConfigSchema.validate reports errors without throwing", () => {
+  const bad = phoenixPluginConfigSchema.validate({ server: "not-a-url", token: "t" });
+  assert.equal(bad.ok, false);
+  assert.ok(!bad.ok && bad.errors.length === 1);
+  assert.match(!bad.ok ? bad.errors[0] : "", /must be a valid URL/);
+
+  const good = phoenixPluginConfigSchema.validate({
+    server: "http://127.0.0.1:9090",
+    token: "t",
+    sealMode: false,
+  });
+  assert.equal(good.ok, true);
 });
