@@ -415,6 +415,9 @@ export class PhoenixClient {
           ...(url.protocol === "https:" ? tlsMaterial : {}),
         },
         (response) => {
+          // Capture TLS details now: response.socket is detached (null) by the
+          // time the "end" event fires on modern Node.
+          const peerCertificate = normalizePeerCertificate(response.socket);
           const chunks: Buffer[] = [];
           response.on("data", (chunk) => {
             chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
@@ -433,7 +436,7 @@ export class PhoenixClient {
             resolve({
               statusCode: response.statusCode ?? 0,
               body: parsedBody,
-              peerCertificate: normalizePeerCertificate(response.socket),
+              peerCertificate,
             });
           });
         },
