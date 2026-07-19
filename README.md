@@ -136,6 +136,21 @@ npm run smoke:openclaw
 
 The smoke uses `OPENCLAW_REPO` when set, otherwise `/mnt/projects/openclaw`. If the local OpenClaw checkout is absent it reports a TAP skip with that instruction. It imports the plugin through the documented `openclaw/plugin-sdk/plugin-entry` seam with a smoke SDK shim, verifies the local OpenClaw checkout exposes that SDK subpath, captures tool/service/CLI registration, and does not read real Phoenix secrets or deploy anything.
 
+### Integration tests
+
+```bash
+npm run test:integration
+```
+
+This tier boots a throwaway local `phoenix-server` (fresh store under `os.tmpdir()`, listening on `127.0.0.1` only, seeded with synthetic secrets) and drives the plugin's real tools, startup preflight, `openclaw phoenix verify` path, sealed responses, audit metadata, and mTLS against it. The server and its temp directory are torn down after the run.
+
+Server acquisition, in order:
+
+- `PHOENIX_SERVER_BIN` — path to a prebuilt `phoenix-server` binary (`PHOENIX_CLI_BIN` for the `phoenix` CLI; defaults to a `phoenix` binary next to `PHOENIX_SERVER_BIN`).
+- Otherwise it builds both binaries from a Phoenix source checkout at `PHOENIX_SRC` (default `/mnt/projects/phoenix`) using the Go toolchain from `GO` (default `go` on `PATH`).
+
+If neither a prebuilt binary nor a buildable checkout is available, the suite reports a TAP skip with those instructions instead of failing. `npm test` does not run this tier and stays fully offline.
+
 ## Package release checklist
 
 Before parent release approval/publish:
