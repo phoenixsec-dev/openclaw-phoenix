@@ -6,7 +6,8 @@ import { registerHooks } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const REPO_ROOT = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
-const OPENCLAW_REPO = path.resolve(process.env.OPENCLAW_REPO ?? "/mnt/projects/openclaw");
+// Sibling-checkout convention: ../openclaw next to this repo unless overridden.
+const OPENCLAW_REPO = path.resolve(process.env.OPENCLAW_REPO ?? path.resolve(REPO_ROOT, "../openclaw"));
 const SDK_SPECIFIER = "openclaw/plugin-sdk/plugin-entry";
 const LEGACY_CORE_SPECIFIER = "openclaw/plugin-sdk/core";
 const EXPECTED_PLUGIN_ID = "phoenix-secrets";
@@ -59,6 +60,19 @@ throw new Error(${JSON.stringify(
 )});
 `);
 
+// The loader shim prefers the REAL definePluginEntry from the local OpenClaw
+// checkout (src/plugin-sdk/plugin-entry.ts, with the checkout's .js -> .ts
+// source import specifiers remapped). That only works when the checkout can
+// actually be loaded standalone: as of 2026-07 it cannot (no dist/ build, no
+// node_modules, and plugin-entry.ts transitively imports the external "zod"
+// dependency), so loadPluginEntry falls back to the hand-written stub and
+// reports which mode ran via t.diagnostic.
+const REAL_SDK_ENTRY_URL = pathToFileURL(
+  path.join(OPENCLAW_REPO, "src", "plugin-sdk", "plugin-entry.ts"),
+).href;
+const OPENCLAW_SRC_URL_PREFIX = pathToFileURL(path.join(OPENCLAW_REPO, "src")).href + "/";
+
+let sdkMode: "real" | "stub" = "stub";
 let sdkHookRegistered = false;
 function registerOpenClawPluginSdkSmokeShim(): void {
   if (sdkHookRegistered) {
@@ -68,10 +82,27 @@ function registerOpenClawPluginSdkSmokeShim(): void {
   registerHooks({
     resolve(specifier, context, nextResolve) {
       if (specifier === SDK_SPECIFIER) {
-        return { url: pluginEntrySdkStubUrl, shortCircuit: true };
+        return {
+          url: sdkMode === "real" ? REAL_SDK_ENTRY_URL : pluginEntrySdkStubUrl,
+          shortCircuit: true,
+        };
       }
       if (specifier === LEGACY_CORE_SPECIFIER) {
         return { url: legacyCoreImportErrorUrl, shortCircuit: true };
+      }
+      // The OpenClaw checkout's TypeScript sources import siblings via ".js"
+      // specifiers; remap them to the ".ts" sources when loading the real SDK.
+      const parentURL = (context as { parentURL?: string }).parentURL;
+      if (
+        sdkMode === "real" &&
+        parentURL?.startsWith(OPENCLAW_SRC_URL_PREFIX) &&
+        (specifier.startsWith("./") || specifier.startsWith("../")) &&
+        specifier.endsWith(".js")
+      ) {
+        const candidate = new URL(specifier.replace(/\.js$/, ".ts"), parentURL);
+        if (fs.existsSync(fileURLToPath(candidate))) {
+          return { url: candidate.href, shortCircuit: true };
+        }
       }
       return nextResolve(specifier, context);
     },
@@ -217,18 +248,51 @@ function createFakeProgram() {
   };
 }
 
-async function loadPluginEntry() {
+type LoadedPluginEntry = {
+  id: string;
+  name: string;
+  description: string;
+  configSchema?: Record<string, unknown>;
+  register: (api: Record<string, unknown>) => void;
+};
+
+async function loadPluginEntry(t: { diagnostic: (message: string) => void }): Promise<LoadedPluginEntry> {
   registerOpenClawPluginSdkSmokeShim();
-  const indexUrl = pathToFileURL(path.join(REPO_ROOT, "index.ts"));
-  indexUrl.searchParams.set("openclaw-smoke", String(Date.now()));
-  const imported = await import(indexUrl.href);
-  return imported.default as {
-    id: string;
-    name: string;
-    description: string;
-    configSchema?: Record<string, unknown>;
-    register: (api: Record<string, unknown>) => void;
-  };
+  const modes: Array<"real" | "stub"> = ["real", "stub"];
+  let lastRealError: unknown;
+  for (const mode of modes) {
+    sdkMode = mode;
+    const indexUrl = pathToFileURL(path.join(REPO_ROOT, "index.ts"));
+    indexUrl.searchParams.set("openclaw-smoke", `${mode}-${Date.now()}`);
+    try {
+      const imported = await import(indexUrl.href);
+      t.diagnostic(`plugin-sdk definePluginEntry mode: ${mode}`);
+      return imported.default as LoadedPluginEntry;
+    } catch (error) {
+      if (mode === "real") {
+        lastRealError = error;
+        // Guard against false confidence from the stub: strict mode for CI or
+        // environments where the real SDK is expected to load.
+        if (process.env.OPENCLAW_SMOKE_REQUIRE_REAL_SDK) {
+          throw new Error(
+            `OPENCLAW_SMOKE_REQUIRE_REAL_SDK is set but the real plugin-sdk import failed: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+        t.diagnostic(
+          `real plugin-sdk import failed, falling back to stub: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        continue;
+      }
+      throw error;
+    } finally {
+      sdkMode = "stub";
+    }
+  }
+  throw lastRealError;
 }
 
 if (!fs.existsSync(path.join(OPENCLAW_REPO, "package.json"))) {
@@ -242,14 +306,11 @@ if (!fs.existsSync(path.join(OPENCLAW_REPO, "package.json"))) {
 
     const packageJson = readJsonFile(path.join(REPO_ROOT, "package.json"));
     const manifest = readJsonFile(path.join(REPO_ROOT, "openclaw.plugin.json"));
-    const indexSource = fs.readFileSync(path.join(REPO_ROOT, "index.ts"), "utf8");
 
     assert.equal(manifest.id, EXPECTED_PLUGIN_ID);
     assert.deepEqual((packageJson.openclaw as { extensions?: unknown })?.extensions, ["./index.ts"]);
-    assert.match(indexSource, /from\s+["']openclaw\/plugin-sdk\/plugin-entry["']/);
-    assert.doesNotMatch(indexSource, /from\s+["']openclaw\/plugin-sdk\/core["']/);
 
-    const entry = await loadPluginEntry();
+    const entry = await loadPluginEntry(t);
     assert.equal(entry.id, manifest.id);
     assert.equal(typeof entry.register, "function");
 

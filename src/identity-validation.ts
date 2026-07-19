@@ -1,43 +1,48 @@
 import type { PhoenixPluginConfig } from "./config.ts";
+import { PhoenixAccessDeniedError } from "./errors.ts";
 import { getPhoenixAgentClientConfigs } from "./identity.ts";
 import { fingerprintSealPublicKey } from "./seal.ts";
 import { fingerprintPhoenixTokenFile } from "./token.ts";
 
-export class PhoenixDuplicateIdentityMaterialError extends Error {
-  readonly status = 403;
-  readonly type = "access_denied" as const;
-  readonly code = "PHOENIX_DUPLICATE_IDENTITY_MATERIAL";
+export class PhoenixDuplicateIdentityMaterialError extends PhoenixAccessDeniedError {
   readonly agentId: string;
   readonly existingAgentId: string;
   readonly material: "token" | "seal key";
-  readonly detail: string;
-  readonly remediation =
-    "Configure every mapped OpenClaw agent with distinct Phoenix token and seal key material before using Phoenix tools.";
 
   constructor(params: {
     agentId: string;
     existingAgentId: string;
     material: "token" | "seal key";
   }) {
-    const message =
-      `phoenix-secrets agents.${params.agentId} ${params.material} material must be unique; it matches agents.${params.existingAgentId}`;
-    super(message);
-    this.name = "PhoenixDuplicateIdentityMaterialError";
+    super({
+      code: "PHOENIX_DUPLICATE_IDENTITY_MATERIAL",
+      message:
+        `phoenix-secrets agents.${params.agentId} ${params.material} material must be unique; it matches agents.${params.existingAgentId}`,
+      remediation:
+        "Configure every mapped OpenClaw agent with distinct Phoenix token and seal key material before using Phoenix tools.",
+    });
     this.agentId = params.agentId;
     this.existingAgentId = params.existingAgentId;
     this.material = params.material;
-    this.detail = message;
   }
+}
 
-  toJSON() {
-    return {
-      type: this.type,
-      status: this.status,
-      error: this.message,
-      code: this.code,
-      detail: this.detail,
-      remediation: this.remediation,
-    };
+export class PhoenixIdentityMaterialError extends PhoenixAccessDeniedError {
+  readonly agentId: string;
+
+  constructor(params: { agentId: string; material: "token" | "seal key"; cause: unknown }) {
+    super({
+      code: "PHOENIX_IDENTITY_MATERIAL_UNREADABLE",
+      message: `phoenix-secrets agents.${params.agentId} ${params.material} material could not be validated`,
+      // Deliberately omits the underlying path/filesystem error: this detail is
+      // model/tool-visible and must not leak another agent's credential paths.
+      detail:
+        `Cross-agent identity validation could not read agents.${params.agentId} ${params.material} material (missing, unreadable, insecure permissions, or invalid contents).`,
+      remediation:
+        "Fix the file path, permissions, and contents for that mapped agent (specifics are in the gateway startup preflight warning); every mapped Phoenix identity must be readable before Phoenix tools can run for any agent.",
+    });
+    this.agentId = params.agentId;
+    this.cause = params.cause;
   }
 }
 
@@ -52,9 +57,24 @@ export async function validatePhoenixAgentIdentityMaterialUniqueness(
   const tokenOwners = new Map<string, string>();
   const sealKeyOwners = new Map<string, string>();
 
+  const fingerprint = async (
+    agentId: string,
+    material: "token" | "seal key",
+    read: () => Promise<string>,
+  ): Promise<string> => {
+    try {
+      return await read();
+    } catch (error) {
+      throw new PhoenixIdentityMaterialError({ agentId, material, cause: error });
+    }
+  };
+
   for (const { agentId, config: agentConfig } of agentConfigs) {
     if (agentConfig.tokenFile) {
-      const tokenFingerprint = await fingerprintPhoenixTokenFile(agentConfig.tokenFile);
+      const tokenFile = agentConfig.tokenFile;
+      const tokenFingerprint = await fingerprint(agentId, "token", () =>
+        fingerprintPhoenixTokenFile(tokenFile),
+      );
       const existingAgentId = tokenOwners.get(tokenFingerprint);
       if (existingAgentId) {
         throw new PhoenixDuplicateIdentityMaterialError({
@@ -67,7 +87,10 @@ export async function validatePhoenixAgentIdentityMaterialUniqueness(
     }
 
     if (agentConfig.sealMode && agentConfig.sealKeyFile) {
-      const sealKeyFingerprint = await fingerprintSealPublicKey(agentConfig.sealKeyFile);
+      const sealKeyFile = agentConfig.sealKeyFile;
+      const sealKeyFingerprint = await fingerprint(agentId, "seal key", () =>
+        fingerprintSealPublicKey(sealKeyFile),
+      );
       const existingAgentId = sealKeyOwners.get(sealKeyFingerprint);
       if (existingAgentId) {
         throw new PhoenixDuplicateIdentityMaterialError({

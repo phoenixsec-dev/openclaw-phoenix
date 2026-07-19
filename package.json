@@ -1,6 +1,7 @@
 {
   "name": "openclaw-phoenix",
   "version": "0.1.1",
+  "private": true,
   "description": "OpenClaw plugin for Phoenix Secrets Manager",
   "type": "module",
   "license": "MIT",
@@ -59,6 +60,8 @@
   },
   "scripts": {
     "test": "node --test test/*.test.ts",
+    "test:integration": "node --test test/integration/*.test.ts",
+    "generate:manifest": "node scripts/generate-manifest.mjs",
     "smoke": "npm run smoke:openclaw",
     "smoke:openclaw": "node --test test/openclaw-plugin-smoke.test.ts"
   }

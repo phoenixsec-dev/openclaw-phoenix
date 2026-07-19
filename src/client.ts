@@ -5,10 +5,10 @@ import type { Socket } from "node:net";
 import type { PeerCertificate, TLSSocket } from "node:tls";
 import { normalizeListPrefix, normalizePhoenixRef } from "./refs.ts";
 import { buildSealHeader } from "./seal.ts";
+import { readCredentialFile } from "./secure-file.ts";
 import { readPhoenixTokenFile } from "./token.ts";
 import type { PhoenixClientConfig } from "./config.ts";
-import { PhoenixIdentityError } from "./identity.ts";
-import { PhoenixDuplicateIdentityMaterialError } from "./identity-validation.ts";
+import { PhoenixAccessDeniedError } from "./errors.ts";
 import type { PhoenixCallerContext } from "./tool-helpers.ts";
 
 export type PhoenixPeerCertificate = {
@@ -300,10 +300,7 @@ export function toPhoenixErrorPayload(error: unknown): PhoenixApiErrorPayload {
   if (error instanceof PhoenixApiError) {
     return error.toJSON();
   }
-  if (
-    error instanceof PhoenixIdentityError ||
-    error instanceof PhoenixDuplicateIdentityMaterialError
-  ) {
+  if (error instanceof PhoenixAccessDeniedError) {
     return error.toJSON();
   }
   const message = error instanceof Error ? error.message : String(error);
@@ -360,7 +357,9 @@ export class PhoenixClient {
         ...(this.config.clientCert
           ? { cert: await fs.readFile(this.config.clientCert, "utf8") }
           : {}),
-        ...(this.config.clientKey ? { key: await fs.readFile(this.config.clientKey, "utf8") } : {}),
+        ...(this.config.clientKey
+          ? { key: await readCredentialFile(this.config.clientKey, "Phoenix client key") }
+          : {}),
       }))();
     }
     return this.tlsMaterialPromise;
@@ -419,6 +418,9 @@ export class PhoenixClient {
           ...(url.protocol === "https:" ? tlsMaterial : {}),
         },
         (response) => {
+          // Capture TLS details now: response.socket is detached (null) by the
+          // time the "end" event fires on modern Node.
+          const peerCertificate = normalizePeerCertificate(response.socket);
           const chunks: Buffer[] = [];
           response.on("data", (chunk) => {
             chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
@@ -437,7 +439,7 @@ export class PhoenixClient {
             resolve({
               statusCode: response.statusCode ?? 0,
               body: parsedBody,
-              peerCertificate: normalizePeerCertificate(response.socket),
+              peerCertificate,
             });
           });
         },
@@ -570,9 +572,10 @@ export class PhoenixClient {
 
   async list(prefix?: string, options: { caller?: PhoenixCallerContext } = {}) {
     const normalizedPrefix = normalizeListPrefix(prefix, this.config.defaultNamespace);
+    const encodedPrefix = normalizedPrefix.split("/").map(encodeURIComponent).join("/");
     const response = await this.requestJson({
       method: "GET",
-      pathname: `/v1/secrets/${normalizedPrefix}`,
+      pathname: `/v1/secrets/${encodedPrefix}`,
       toolName: "phoenix_list",
       caller: options.caller,
     });

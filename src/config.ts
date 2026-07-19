@@ -1,6 +1,9 @@
-export const PHOENIX_OPENCLAW_AGENT_IDS = ["main", "kit", "phoenix", "echo", "relay"] as const;
+import { PHOENIX_NAMESPACE_PATTERN, isValidPhoenixNamespace } from "./refs.ts";
 
-export type PhoenixOpenClawAgentId = (typeof PHOENIX_OPENCLAW_AGENT_IDS)[number];
+// Mirrors OpenClaw's VALID_ID_RE (src/routing/session-key.ts) after its
+// normalizeAgentId lowercasing.
+export const PHOENIX_OPENCLAW_AGENT_ID_PATTERN = "^[a-z0-9][a-z0-9_-]{0,63}$";
+const PHOENIX_OPENCLAW_AGENT_ID_RE = new RegExp(PHOENIX_OPENCLAW_AGENT_ID_PATTERN);
 
 export type PhoenixClientConfig = {
   server: string;
@@ -26,7 +29,7 @@ export type PhoenixAgentIdentityConfig = {
 };
 
 export type PhoenixPluginConfig = PhoenixClientConfig & {
-  agents?: Partial<Record<PhoenixOpenClawAgentId, PhoenixAgentIdentityConfig>>;
+  agents?: Record<string, PhoenixAgentIdentityConfig>;
 };
 
 type ResolvePhoenixPluginConfigOptions = {
@@ -39,7 +42,6 @@ type PluginConfigValidation =
   | { ok: false; errors: string[] };
 
 const TRUE_VALUES = new Set(["1", "true", "yes", "on"]);
-const PHOENIX_OPENCLAW_AGENT_ID_SET = new Set<string>(PHOENIX_OPENCLAW_AGENT_IDS);
 
 const phoenixAgentIdentityConfigJsonSchema = {
   type: "object",
@@ -52,7 +54,7 @@ const phoenixAgentIdentityConfigJsonSchema = {
     caCert: { type: "string" },
     clientCert: { type: "string" },
     clientKey: { type: "string" },
-    defaultNamespace: { type: "string" },
+    defaultNamespace: { type: "string", pattern: PHOENIX_NAMESPACE_PATTERN },
     sealMode: { type: "boolean" },
   },
 };
@@ -68,15 +70,16 @@ export const phoenixPluginConfigJsonSchema = {
     caCert: { type: "string" },
     clientCert: { type: "string" },
     clientKey: { type: "string" },
-    defaultNamespace: { type: "string" },
+    defaultNamespace: { type: "string", pattern: PHOENIX_NAMESPACE_PATTERN },
     sealMode: { type: "boolean" },
     agents: {
       type: "object",
       additionalProperties: false,
       minProperties: 1,
-      properties: Object.fromEntries(
-        PHOENIX_OPENCLAW_AGENT_IDS.map((agentId) => [agentId, phoenixAgentIdentityConfigJsonSchema]),
-      ),
+      propertyNames: { pattern: PHOENIX_OPENCLAW_AGENT_ID_PATTERN },
+      patternProperties: {
+        [PHOENIX_OPENCLAW_AGENT_ID_PATTERN]: phoenixAgentIdentityConfigJsonSchema,
+      },
     },
   },
 };
@@ -126,7 +129,7 @@ export const phoenixPluginConfigUiHints = {
   },
   agents: {
     label: "Per-Agent Phoenix Identities",
-    help: "Map trusted OpenClaw ctx.agentId values (main, kit, phoenix, echo, relay) to tokenFile, sealKeyFile, and defaultNamespace. Tool args cannot select identity.",
+    help: "Map trusted OpenClaw ctx.agentId values (lowercase ids, e.g. main or kit) to tokenFile, sealKeyFile, and defaultNamespace. Tool args cannot select identity.",
   },
 };
 
@@ -170,6 +173,11 @@ function validateDefaultNamespace(defaultNamespace: string, label: string): void
   if (defaultNamespace.includes(":")) {
     throw new Error(`${label} must be a namespace name, not a URI`);
   }
+  if (!isValidPhoenixNamespace(defaultNamespace)) {
+    throw new Error(
+      `${label} must be a single namespace segment (letters, digits, '._-', no '/' or '.'/'..')`,
+    );
+  }
 }
 
 function readAgentIdentityMappings(
@@ -188,13 +196,15 @@ function readAgentIdentityMappings(
     throw new Error("phoenix-secrets agents must configure at least one OpenClaw agent identity");
   }
 
-  const agents: Partial<Record<PhoenixOpenClawAgentId, PhoenixAgentIdentityConfig>> = {};
+  // Null prototype so runtime agentId lookups can never resolve to inherited
+  // Object.prototype members (e.g. an agent named "constructor").
+  const agents: Record<string, PhoenixAgentIdentityConfig> = Object.create(null);
   const tokenFileOwners = new Map<string, string>();
   const sealKeyFileOwners = new Map<string, string>();
   for (const [agentId, rawAgent] of entries) {
-    if (!PHOENIX_OPENCLAW_AGENT_ID_SET.has(agentId)) {
+    if (!PHOENIX_OPENCLAW_AGENT_ID_RE.test(agentId)) {
       throw new Error(
-        `phoenix-secrets agents.${agentId} is not a supported OpenClaw agent id; expected one of ${PHOENIX_OPENCLAW_AGENT_IDS.join(", ")}`,
+        `phoenix-secrets agents.${agentId} is not a valid OpenClaw agent id; ids must match ${PHOENIX_OPENCLAW_AGENT_ID_PATTERN}`,
       );
     }
     if (!isRecord(rawAgent)) {
@@ -248,7 +258,7 @@ function readAgentIdentityMappings(
       throw new Error(`phoenix-secrets agents.${agentId} mTLS override requires both clientCert and clientKey`);
     }
 
-    agents[agentId as PhoenixOpenClawAgentId] = {
+    agents[agentId] = {
       tokenFile,
       defaultNamespace,
       ...(sealKeyFile ? { sealKeyFile } : {}),

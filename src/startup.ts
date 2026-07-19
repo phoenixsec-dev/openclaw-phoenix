@@ -3,6 +3,7 @@ import { PhoenixClient, formatPhoenixError } from "./client.ts";
 import { getPhoenixAgentClientConfigs } from "./identity.ts";
 import {
   PhoenixDuplicateIdentityMaterialError,
+  PhoenixIdentityMaterialError,
   validatePhoenixAgentIdentityMaterialUniqueness,
 } from "./identity-validation.ts";
 
@@ -28,8 +29,14 @@ export async function runPhoenixStartupCheck(config: PhoenixPluginConfig): Promi
           "Check that each mapped agent uses distinct token and seal key material.",
       );
     }
+    // The tool-visible payload omits the underlying filesystem error; this log
+    // line is operator-facing, so include it here.
+    const cause =
+      error instanceof PhoenixIdentityMaterialError && error.cause instanceof Error
+        ? ` Underlying error: ${error.cause.message}.`
+        : "";
     throw new Error(
-      `Phoenix startup preflight failed for per-agent identity mapping: ${formatPhoenixError(error)}. ` +
+      `Phoenix startup preflight failed for per-agent identity mapping: ${formatPhoenixError(error)}.${cause} ` +
         "Check the configured per-agent token and seal key file paths and permissions.",
     );
   }
