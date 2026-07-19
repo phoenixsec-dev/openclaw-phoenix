@@ -55,7 +55,7 @@ function getMappedIdentity(
   config: PhoenixPluginConfig,
   agentId: string,
 ): PhoenixAgentIdentityConfig | undefined {
-  return (config.agents as Record<string, PhoenixAgentIdentityConfig> | undefined)?.[agentId];
+  return config.agents?.[agentId];
 }
 
 function effectiveClientConfig(

@@ -51,7 +51,7 @@
     },
     "agents": {
       "label": "Per-Agent Phoenix Identities",
-      "help": "Map trusted OpenClaw ctx.agentId values (main, kit, phoenix, echo, relay) to tokenFile, sealKeyFile, and defaultNamespace. Tool args cannot select identity."
+      "help": "Map trusted OpenClaw ctx.agentId values (lowercase ids, e.g. main or kit) to tokenFile, sealKeyFile, and defaultNamespace. Tool args cannot select identity."
     }
   },
   "configSchema": {
@@ -89,12 +89,9 @@
         "type": "object",
         "additionalProperties": false,
         "minProperties": 1,
-        "properties": {
-          "main": { "$ref": "#/$defs/agentIdentity" },
-          "kit": { "$ref": "#/$defs/agentIdentity" },
-          "phoenix": { "$ref": "#/$defs/agentIdentity" },
-          "echo": { "$ref": "#/$defs/agentIdentity" },
-          "relay": { "$ref": "#/$defs/agentIdentity" }
+        "propertyNames": { "pattern": "^[a-z][a-z0-9_-]{0,63}$" },
+        "patternProperties": {
+          "^[a-z][a-z0-9_-]{0,63}$": { "$ref": "#/$defs/agentIdentity" }
         }
       }
     },

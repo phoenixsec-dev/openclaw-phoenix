@@ -114,24 +114,42 @@ test("resolvePhoenixPluginConfig accepts per-agent identity mappings without top
   assert.equal(config.agents?.kit?.caCert, "/resolved/./kit-ca.crt");
 });
 
-test("resolvePhoenixPluginConfig rejects unmapped/invalid agent ids", () => {
-  assert.throws(
-    () =>
-      resolvePhoenixPluginConfig(
-        {
-          server: "http://phoenix:9090",
-          sealMode: false,
-          agents: {
-            unknown: {
-              tokenFile: "./unknown.token",
-              defaultNamespace: "openclaw-unknown",
+test("resolvePhoenixPluginConfig rejects invalid agent ids and accepts free-form valid ids", () => {
+  for (const badAgentId of ["Bad-Caps", "1starts-with-digit", "has space", "has/slash", "-leading-dash", ""]) {
+    assert.throws(
+      () =>
+        resolvePhoenixPluginConfig(
+          {
+            server: "http://phoenix:9090",
+            sealMode: false,
+            agents: {
+              [badAgentId]: {
+                tokenFile: "./agent.token",
+                defaultNamespace: "openclaw-agent",
+              },
             },
           },
+          { env: {} },
+        ),
+      /is not a valid OpenClaw agent id/,
+      `expected agent id ${JSON.stringify(badAgentId)} to be rejected`,
+    );
+  }
+
+  const config = resolvePhoenixPluginConfig(
+    {
+      server: "http://phoenix:9090",
+      sealMode: false,
+      agents: {
+        "custom-agent_7": {
+          tokenFile: "./custom.token",
+          defaultNamespace: "openclaw-custom",
         },
-        { env: {} },
-      ),
-    /not a supported OpenClaw agent id/,
+      },
+    },
+    { env: {} },
   );
+  assert.equal(config.agents?.["custom-agent_7"]?.defaultNamespace, "openclaw-custom");
 });
 
 test("resolvePhoenixPluginConfig rejects duplicate per-agent token files and seal keys", () => {
