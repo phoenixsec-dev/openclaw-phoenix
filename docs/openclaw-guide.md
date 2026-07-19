@@ -204,7 +204,7 @@ Operational checklist:
 4. Use live tool calls from each agent identity to validate Phoenix-side public-key registration and policy. `openclaw phoenix verify` is a diagnostic shared-identity helper and does not prove every runtime agent identity is authorized.
 5. Keep `phoenix_resolve` and `phoenix_list` denied until scoped auth, per-agent identity mapping, and sealed behavior are validated.
 
-CT120 policy: keep rollout conservative. Do not deploy this plugin change to CT120 or enable broad Phoenix tools there until scoped per-agent credentials, registered public seal keys, and allowlists have been validated separately.
+Production rollout policy: keep it conservative. Do not deploy this plugin change to a production gateway or enable broad Phoenix tools there until scoped per-agent credentials, registered public seal keys, and allowlists have been validated separately.
 
 ## Authentication patterns
 

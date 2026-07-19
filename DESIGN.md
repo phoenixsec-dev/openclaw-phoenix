@@ -1,7 +1,22 @@
 # OpenClaw Integration Plan (v2)
 
+> **Status: superseded — historical planning document.** The plugin shipped; the
+> README and `docs/` are authoritative. Where this plan disagrees with them, the
+> plan is stale. Known drift:
+>
+> - The exec provider protocol **is now implemented**: Phoenix CLI v0.14.0+
+>   ships `phoenix resolve --stdin-json` (aliases `phoenix openclaw-exec-provider`,
+>   `phoenix secret-provider openclaw`). The flag proposed here as
+>   `--openclaw-exec` landed under that name, and Gap G2 below is closed.
+> - The shipped plugin tools are `phoenix_resolve`, `phoenix_list`, and
+>   `phoenix_status`. There is no `phoenix_get` plugin tool (it exists only as
+>   an MCP tool), and the proposed prompt-build/secret-resolve hooks were not
+>   built.
+> - Per-agent identity mapping, sealed-mode fail-closed contracts, and the
+>   warning-only startup preflight postdate this plan entirely.
+
 **Date:** 2026-03-22 (v2 rewrite)
-**Status:** Draft — ready for review
+**Status:** Draft — ready for review (see superseded banner above)
 **Author:** Aaron (via Claude Code planning session)
 **Supersedes:** v1 of this file (2026-03-20) — corrected factual errors about
 OpenClaw's plugin architecture and exec protocol, reoriented around plugin-first
@@ -87,7 +102,7 @@ operators install and configure in minutes.
 
 ### Prior research (openclaw-workspace)
 
-Extensive research exists in `/home/aaron/openclaw-workspace/research/`:
+Extensive research existed in a local research workspace (not part of this repo):
 
 - `agent-secrets-management-research.md` — 1581-line survey of how Agent Zero,
   LangChain, AutoGen, OpenHands, n8n, Vault handle secrets. Phased
@@ -169,9 +184,9 @@ plugin design concern, not a secrets provider concern.
 
 ### How OpenClaw plugins work
 
-**Source:** `/home/aaron/openclaw/docs/tools/plugin.md`,
-`/home/aaron/openclaw/docs/plugins/architecture.md`,
-`/home/aaron/openclaw/src/plugin-sdk/index.ts`
+**Source:** the OpenClaw checkout: `docs/tools/plugin.md`,
+`docs/plugins/architecture.md`,
+`src/plugin-sdk/index.ts`
 
 **Discovery precedence:**
 1. `plugins.load.paths` (config-specified file or directory)
@@ -233,7 +248,7 @@ It registers:
 Even with the plugin, we should also implement the exec provider protocol
 so operators who don't want a plugin can use the simpler exec path.
 
-**Protocol (from `/home/aaron/openclaw/src/secrets/resolve.ts` lines 687-734):**
+**Protocol (from the OpenClaw checkout: `src/secrets/resolve.ts`):**
 
 Input (stdin):
 ```json

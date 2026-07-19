@@ -22,7 +22,7 @@ openclaw plugins install -l ./path/to/openclaw-phoenix
 
 ## Files
 
-- `openclaw.jsonc` — plugin enablement and sample `phoenix://` refs
+- `openclaw.jsonc` — plugin enablement and per-agent identity configuration
 - `.env.example` — environment variables to provide to the gateway process
 
 ## Per-agent identity and sealed keys
