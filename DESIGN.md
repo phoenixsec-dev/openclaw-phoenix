@@ -193,7 +193,7 @@ const plugin = {
   register(api: OpenClawPluginApi) {
     api.registerTool({ /* ... */ });
     api.registerHook("before_prompt_build", async (req) => { /* ... */ });
-    api.registerCommand({ /* ... */ });
+    api.registerCli(({ program }) => { /* ... */ }, { commands: ["phoenix"] });
     api.registerHttpRoute({ /* ... */ });
   }
 };
@@ -201,7 +201,7 @@ const plugin = {
 
 **Available registrations:** `registerProvider`, `registerTool`, `registerHook`,
 `registerChannel`, `registerSpeechProvider`, `registerMediaUnderstandingProvider`,
-`registerWebSearchProvider`, `registerHttpRoute`, `registerCommand`, and more.
+`registerWebSearchProvider`, `registerHttpRoute`, `registerCli`, and more.
 
 **Installation:**
 ```bash
@@ -418,9 +418,9 @@ Plugin (TypeScript, lives in its own package):
 - `registerTool` for `phoenix_list` — list available secret paths
 - `registerTool` for `phoenix_status` — connection health, cert validity,
   session info
-- `registerHook` for startup — validate Phoenix connectivity at gateway boot,
-  fail fast with actionable error if Phoenix is unreachable
-- `registerCommand` for `openclaw phoenix verify` — dry-run validation of all
+- documented startup service/lifecycle preflight — validate Phoenix connectivity at gateway boot,
+  log warning-only diagnostics if Phoenix is unreachable
+- `registerCli` / plugin CLI registrar for `openclaw phoenix verify` — dry-run validation of all
   `phoenix://` SecretRefs in config
 - Plugin config schema: `server`, `token` (or cert paths), `defaultNamespace`,
   `sealMode` (boolean)
@@ -459,8 +459,8 @@ Exec protocol (Go, in Phoenix CLI):
   and receive a secret value (or sealed token)
 - `phoenix resolve --openclaw-exec` handles the stdin JSON protocol correctly
   with batch resolution
-- Plugin startup hook fails fast with clear error message when Phoenix server
-  is unreachable
+- Plugin startup preflight logs a clear warning when Phoenix server is unreachable
+  and does not kill the OpenClaw gateway
 - `openclaw phoenix verify` catches missing secrets, wrong server URL, ACL
   denials
 - Existing Phoenix behavior (MCP, CLI, direct API) is unaffected
@@ -469,7 +469,7 @@ Exec protocol (Go, in Phoenix CLI):
 - Go: plugin resolves secrets in a real OpenClaw agent conversation; exec
   protocol handles batch resolution correctly
 - No-go: if OpenClaw's plugin SDK doesn't support the registrations we need
-  (verify `registerTool`, `registerHook`, `registerCommand` actually work
+  (verify `registerTool`, documented startup service/lifecycle registration, and `registerCli` / plugin CLI registrar actually work
   for our use case before building)
 
 **Regression concerns:**
@@ -612,7 +612,7 @@ Audit correlation:
 **Objective:** Make day-2 operations smooth for Phoenix+OpenClaw deployments.
 
 **Scope:**
-- `openclaw phoenix status` command (via plugin's `registerCommand`):
+- `openclaw phoenix status` command (via plugin's `registerCli` / plugin CLI registrar):
   - Phoenix server connectivity and version
   - Active sessions (gateway, agents)
   - Recent access summary

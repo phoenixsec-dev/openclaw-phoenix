@@ -1,5 +1,7 @@
 import type { PhoenixPluginConfig } from "./config.ts";
 import { PhoenixClient, toPhoenixErrorPayload } from "./client.ts";
+import { selectPhoenixClientConfigForCaller } from "./identity.ts";
+import { validatePhoenixAgentIdentityMaterialUniqueness } from "./identity-validation.ts";
 import {
   jsonResult,
   readStringArrayParam,
@@ -37,8 +39,13 @@ const StatusParameters = {
   properties: {},
 };
 
-function createClient(config: PhoenixPluginConfig): PhoenixClient {
-  return new PhoenixClient(config);
+async function createClient(
+  config: PhoenixPluginConfig,
+  caller?: PhoenixCallerContext,
+): Promise<PhoenixClient> {
+  const clientConfig = selectPhoenixClientConfigForCaller(config, caller);
+  await validatePhoenixAgentIdentityMaterialUniqueness(config);
+  return new PhoenixClient(clientConfig);
 }
 
 export function createPhoenixResolveTool(
@@ -54,7 +61,7 @@ export function createPhoenixResolveTool(
     execute: async (_toolCallId: string, rawParams: Record<string, unknown>) => {
       try {
         const refs = readStringArrayParam(rawParams, "refs", { required: true }) ?? [];
-        const client = createClient(config);
+        const client = await createClient(config, caller);
         const result = await client.resolve(refs, { caller });
         const errorCount = Object.keys(result.errors).length;
         const valueCount = Object.keys(result.values).length;
@@ -86,7 +93,7 @@ export function createPhoenixListTool(config: PhoenixPluginConfig, caller?: Phoe
     execute: async (_toolCallId: string, rawParams: Record<string, unknown>) => {
       try {
         const prefix = readStringParam(rawParams, "prefix");
-        const client = createClient(config);
+        const client = await createClient(config, caller);
         const result = await client.list(prefix, { caller });
         return jsonResult({
           ok: true,
@@ -112,7 +119,7 @@ export function createPhoenixStatusTool(config: PhoenixPluginConfig, caller?: Ph
     parameters: StatusParameters,
     execute: async () => {
       try {
-        const client = createClient(config);
+        const client = await createClient(config, caller);
         return jsonResult(await client.status({ caller }));
       } catch (error) {
         return jsonResult({

@@ -1,18 +1,65 @@
 {
   "name": "openclaw-phoenix",
   "version": "0.1.1",
-  "private": true,
   "description": "OpenClaw plugin for Phoenix Secrets Manager",
   "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "openclaw",
+    "openclaw-plugin",
+    "phoenix",
+    "secrets",
+    "sealed-responses"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./index.ts": "./index.ts",
+    "./openclaw.plugin.json": "./openclaw.plugin.json",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "LICENSE",
+    "index.js",
+    "index.ts",
+    "src/",
+    "openclaw.plugin.json",
+    "docs/",
+    "examples/openclaw-plugin/",
+    "examples/openclaw-docker/"
+  ],
   "openclaw": {
     "extensions": [
       "./index.ts"
-    ]
+    ],
+    "install": {
+      "npmSpec": "openclaw-phoenix",
+      "defaultChoice": "npm",
+      "minHostVersion": ">=2026.4.25"
+    },
+    "compat": {
+      "pluginApi": ">=2026.4.25",
+      "minGatewayVersion": "2026.4.25"
+    },
+    "build": {
+      "openclawVersion": "2026.4.25",
+      "pluginSdkVersion": "2026.4.25"
+    }
   },
   "peerDependencies": {
-    "openclaw": ">=2026.3.14"
+    "openclaw": ">=2026.4.25"
+  },
+  "peerDependenciesMeta": {
+    "openclaw": {
+      "optional": true
+    }
   },
   "scripts": {
-    "test": "node --test test/*.test.ts"
+    "test": "node --test test/*.test.ts",
+    "smoke": "npm run smoke:openclaw",
+    "smoke:openclaw": "node --test test/openclaw-plugin-smoke.test.ts"
   }
 }
