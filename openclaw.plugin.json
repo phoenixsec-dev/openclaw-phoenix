@@ -1,10 +1,16 @@
 {
   "id": "phoenix-secrets",
   "contracts": {
-    "tools": ["phoenix_resolve", "phoenix_list", "phoenix_status"]
+    "tools": [
+      "phoenix_resolve",
+      "phoenix_list",
+      "phoenix_status"
+    ]
   },
   "activation": {
-    "onCapabilities": ["tool"]
+    "onCapabilities": [
+      "tool"
+    ]
   },
   "uiHints": {
     "server": {
@@ -89,26 +95,44 @@
         "type": "object",
         "additionalProperties": false,
         "minProperties": 1,
-        "propertyNames": { "pattern": "^[a-z][a-z0-9_-]{0,63}$" },
+        "propertyNames": {
+          "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+        },
         "patternProperties": {
-          "^[a-z][a-z0-9_-]{0,63}$": { "$ref": "#/$defs/agentIdentity" }
-        }
-      }
-    },
-    "$defs": {
-      "agentIdentity": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["tokenFile", "defaultNamespace"],
-        "properties": {
-          "server": { "type": "string" },
-          "tokenFile": { "type": "string" },
-          "sealKeyFile": { "type": "string" },
-          "caCert": { "type": "string" },
-          "clientCert": { "type": "string" },
-          "clientKey": { "type": "string" },
-          "defaultNamespace": { "type": "string" },
-          "sealMode": { "type": "boolean" }
+          "^[a-z][a-z0-9_-]{0,63}$": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "tokenFile",
+              "defaultNamespace"
+            ],
+            "properties": {
+              "server": {
+                "type": "string"
+              },
+              "tokenFile": {
+                "type": "string"
+              },
+              "sealKeyFile": {
+                "type": "string"
+              },
+              "caCert": {
+                "type": "string"
+              },
+              "clientCert": {
+                "type": "string"
+              },
+              "clientKey": {
+                "type": "string"
+              },
+              "defaultNamespace": {
+                "type": "string"
+              },
+              "sealMode": {
+                "type": "boolean"
+              }
+            }
+          }
         }
       }
     }
