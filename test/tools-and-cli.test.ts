@@ -637,8 +637,77 @@ test("runPhoenixStartupCheck throws actionable connectivity errors", async () =>
         token: "token",
         sealMode: false,
       }),
-    /Phoenix startup preflight failed/,
+    (error: Error) => {
+      assert.match(error.message, /Phoenix startup preflight failed/);
+      assert.match(error.message, /Phoenix is unreachable/);
+      assert.match(error.message, /phoenix-server is running/);
+      assert.doesNotMatch(error.message, /rejected the configured credentials/);
+      return true;
+    },
   );
+});
+
+test("runPhoenixStartupCheck distinguishes rejected credentials from unreachable", async () => {
+  const probeRequests: Array<{ url: string; authorization: string | undefined }> = [];
+  await withServer(async (req, res) => {
+    probeRequests.push({
+      url: req.url ?? "",
+      authorization: typeof req.headers.authorization === "string" ? req.headers.authorization : undefined,
+    });
+    res.statusCode = 401;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ error: "unauthorized" }));
+  }, async (baseUrl) => {
+    await assert.rejects(
+      () =>
+        runPhoenixStartupCheck({
+          server: baseUrl,
+          token: "synthetic-invalid-token-value",
+          sealMode: false,
+        }),
+      (error: Error) => {
+        assert.match(error.message, /Phoenix startup preflight failed/);
+        assert.match(error.message, /reachable but rejected the configured credentials \(HTTP 401\)/);
+        assert.doesNotMatch(error.message, /Phoenix is unreachable/);
+        assert.doesNotMatch(
+          error.message,
+          /synthetic-invalid-token-value/,
+          "the token value must never appear in preflight messages",
+        );
+        return true;
+      },
+    );
+  });
+
+  // The probe must be an authenticated read-only endpoint carrying the bearer token.
+  assert.equal(probeRequests.length, 1);
+  assert.match(probeRequests[0].url, /^\/v1\/policy\/check\?/);
+  assert.equal(probeRequests[0].authorization, "Bearer synthetic-invalid-token-value");
+});
+
+test("runPhoenixStartupPreflightWarningOnly emits a distinct unauthorized warning", async () => {
+  await withServer(async (_req, res) => {
+    res.statusCode = 403;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ error: "access denied" }));
+  }, async (baseUrl) => {
+    const warnings: string[] = [];
+    const result = await runPhoenixStartupPreflightWarningOnly(
+      {
+        server: baseUrl,
+        token: "synthetic-denied-token-value",
+        sealMode: false,
+      },
+      { warn: (message) => warnings.push(message) },
+    );
+
+    assert.equal(result.ok, false);
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /Phoenix startup preflight warning \(non-fatal\)/);
+    assert.match(warnings[0], /reachable but rejected the configured credentials \(HTTP 403\)/);
+    assert.doesNotMatch(warnings[0], /Phoenix is unreachable/);
+    assert.doesNotMatch(warnings[0], /synthetic-denied-token-value/);
+  });
 });
 
 test("runPhoenixStartupPreflightWarningOnly logs and resolves on connectivity errors", async () => {
@@ -657,6 +726,8 @@ test("runPhoenixStartupPreflightWarningOnly logs and resolves on connectivity er
   assert.equal(result.ok, false);
   assert.equal(warnings.length, 1);
   assert.match(warnings[0], /non-fatal/);
+  assert.match(warnings[0], /Phoenix is unreachable/);
+  assert.doesNotMatch(warnings[0], /rejected the configured credentials/);
 });
 
 test("runPhoenixStartupPreflightWarningOnly logs and resolves on duplicate per-agent material", async () => {
@@ -802,18 +873,22 @@ test("per-agent server override routes requests to the agent's own server", asyn
   });
 });
 
-test("runPhoenixStartupCheck passes health checks for every mapped agent", async () => {
+test("runPhoenixStartupCheck runs an authenticated probe for every mapped agent", async () => {
   await withAgentIdentityFiles(async (files) => {
     const healthAgents: Array<string | undefined> = [];
+    const probeTokens: Array<string | undefined> = [];
     await withServer(async (req, res) => {
       res.setHeader("content-type", "application/json");
-      if (req.url === "/v1/health") {
+      if (req.url?.startsWith("/v1/policy/check")) {
         healthAgents.push(
           typeof req.headers["x-openclaw-agent"] === "string"
             ? req.headers["x-openclaw-agent"]
             : undefined,
         );
-        res.end(JSON.stringify({ status: "ok" }));
+        probeTokens.push(
+          typeof req.headers.authorization === "string" ? req.headers.authorization : undefined,
+        );
+        res.end(JSON.stringify({ path: "openclaw/startup-preflight-auth-probe", check: "allow_unseal", allowed: false }));
         return;
       }
       res.statusCode = 404;
@@ -836,6 +911,7 @@ test("runPhoenixStartupCheck passes health checks for every mapped agent", async
 
       await runPhoenixStartupCheck(config);
       assert.deepEqual(healthAgents, ["kit", "main"]);
+      assert.deepEqual(probeTokens, ["Bearer kit-token", "Bearer main-token"]);
 
       healthAgents.length = 0;
       const warnings: string[] = [];

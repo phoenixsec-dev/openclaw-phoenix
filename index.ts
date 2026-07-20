@@ -60,7 +60,15 @@ export default definePluginEntry({
     api.registerService({
       id: "phoenix-startup-check",
       start: async (ctx) => {
-        await runPhoenixStartupPreflightWarningOnly(config, ctx.logger);
+        // Route the warning through a logger that actually lands in gateway
+        // logs: prefer the service context logger, fall back to the plugin
+        // API logger, then stderr as a last resort. Bare console/stdout from
+        // plugin service startup is not reliably captured by the gateway.
+        const warn =
+          ctx.logger?.warn?.bind(ctx.logger) ??
+          api.logger?.warn?.bind(api.logger) ??
+          ((message: string) => console.error(message));
+        await runPhoenixStartupPreflightWarningOnly(config, { warn });
       },
     });
 

@@ -494,6 +494,34 @@ export class PhoenixClient {
     };
   }
 
+  /**
+   * Cheap authenticated read-only probe used by the startup preflight.
+   *
+   * GET /v1/policy/check authenticates the caller (bearer token or mTLS
+   * client certificate) but is not gated on any ACL or admin permission, so
+   * any valid identity gets HTTP 200 regardless of its secret access. This
+   * makes it the right probe for "are these credentials valid" without
+   * touching secret material: /v1/health is unauthenticated (a bad token
+   * still gets 200) and /v1/status is admin-only (a valid non-admin token
+   * gets 403).
+   *
+   * Failure modes surface as PhoenixApiError: type "network_error" when the
+   * server is unreachable, type "access_denied" (HTTP 401/403) when the
+   * server rejected the credentials.
+   */
+  async checkAuth(options: { toolName?: string; caller?: PhoenixCallerContext } = {}): Promise<void> {
+    const response = await this.requestJson({
+      method: "GET",
+      pathname: "/v1/policy/check",
+      query: { path: "openclaw/startup-preflight-auth-probe", check: "allow_unseal" },
+      toolName: options.toolName,
+      caller: options.caller,
+    });
+    if (response.statusCode !== 200) {
+      throw toApiError(response.statusCode, response.body);
+    }
+  }
+
   async resolve(
     refs: string[],
     options: { caller?: PhoenixCallerContext; dryRun?: boolean } = {},

@@ -253,8 +253,10 @@ if (!availability.ok) {
       };
       await assert.rejects(runPhoenixStartupCheck(config), (error: Error) => {
         assert.match(error.message, /Phoenix startup preflight failed/);
+        assert.match(error.message, /Phoenix is unreachable/);
         assert.match(error.message, /Could not reach Phoenix at http:\/\/127\.0\.0\.1:\d+/);
         assert.match(error.message, /Check the server URL/);
+        assert.doesNotMatch(error.message, /rejected the configured credentials/);
         return true;
       });
       const warnings: string[] = [];
@@ -264,21 +266,40 @@ if (!availability.ok) {
       assert.equal(preflight.ok, false);
       assert.equal(warnings.length, 1);
       assert.match(warnings[0], /Phoenix startup preflight warning \(non-fatal\)/);
+      assert.match(warnings[0], /Phoenix is unreachable/);
     });
 
-    await t.test("startup preflight does not validate bearer tokens (health is unauthenticated)", async (st) => {
-      // Observed Phoenix behavior: GET /v1/health answers HTTP 200 regardless of
-      // the Authorization header, so a preflight configured with a bad token
-      // still succeeds. Token validity is only checked on first real use
-      // (resolve/list). If this assertion ever fails, Phoenix started
-      // authenticating /v1/health and the preflight gained token validation.
+    await t.test("startup preflight rejects an invalid bearer token with a distinct warning", async (st) => {
+      // The preflight probes the authenticated GET /v1/policy/check endpoint,
+      // so an invalid token no longer passes silently (the old behavior probed
+      // the unauthenticated /v1/health endpoint and could not catch this).
       const config: PhoenixPluginConfig = {
         server: server.url,
         token: "synthetic-bogus-token-that-is-not-registered",
         sealMode: false,
       };
-      await runPhoenixStartupCheck(config);
-      st.diagnostic("GET /v1/health is unauthenticated: preflight passes even with an invalid token");
+      await assert.rejects(runPhoenixStartupCheck(config), (error: Error) => {
+        assert.match(error.message, /Phoenix startup preflight failed/);
+        assert.match(error.message, /reachable but rejected the configured credentials \(HTTP 401\)/);
+        assert.doesNotMatch(error.message, /Phoenix is unreachable/);
+        assert.doesNotMatch(
+          error.message,
+          /synthetic-bogus-token-that-is-not-registered/,
+          "token material must never appear in preflight messages",
+        );
+        return true;
+      });
+
+      const warnings: string[] = [];
+      const preflight = await runPhoenixStartupPreflightWarningOnly(config, {
+        warn: (message) => warnings.push(message),
+      });
+      assert.equal(preflight.ok, false);
+      assert.equal(warnings.length, 1);
+      assert.match(warnings[0], /Phoenix startup preflight warning \(non-fatal\)/);
+      assert.match(warnings[0], /rejected the configured credentials/);
+      assert.ok(!warnings[0].includes("synthetic-bogus-token-that-is-not-registered"));
+      st.diagnostic("invalid bearer tokens now fail preflight with an unauthorized-specific warning");
     });
 
     await t.test("verifyPhoenixRefsInConfig dry-runs refs without reading values", async (st) => {
