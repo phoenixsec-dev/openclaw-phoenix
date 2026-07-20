@@ -1,5 +1,5 @@
 import type { PhoenixPluginConfig, PhoenixClientConfig } from "./config.ts";
-import { PhoenixClient, formatPhoenixError } from "./client.ts";
+import { PhoenixApiError, PhoenixClient, formatPhoenixError } from "./client.ts";
 import { getPhoenixAgentClientConfigs } from "./identity.ts";
 import {
   PhoenixDuplicateIdentityMaterialError,
@@ -13,7 +13,11 @@ async function runSinglePhoenixStartupCheck(params: {
 }): Promise<void> {
   const client = new PhoenixClient(params.config);
   await client.validateSealConfiguration();
-  await client.health({
+  // Authenticated probe (GET /v1/policy/check), not the unauthenticated
+  // /v1/health endpoint: this validates the configured token / client
+  // certificate against the server, so invalid credentials no longer pass
+  // preflight silently. See PhoenixClient.checkAuth for endpoint rationale.
+  await client.checkAuth({
     toolName: "phoenix_status",
     ...(params.agentId ? { caller: { agentId: params.agentId } } : {}),
   });
@@ -49,6 +53,22 @@ export async function runPhoenixStartupCheck(config: PhoenixPluginConfig): Promi
       await runSinglePhoenixStartupCheck(check);
     } catch (error) {
       const target = "agentId" in check ? ` agent ${check.agentId}` : "";
+      // Only classify genuine Phoenix API/transport errors; local
+      // configuration errors (unreadable seal key files, etc.) fall through
+      // to the generic message below.
+      const payload = error instanceof PhoenixApiError ? error.toJSON() : undefined;
+      if (payload?.type === "network_error") {
+        throw new Error(
+          `Phoenix startup preflight failed for${target} ${check.config.server}: Phoenix is unreachable: ${formatPhoenixError(error)}. ` +
+            "Check the server URL, network reachability, that phoenix-server is running, and any configured CA/client certificate paths.",
+        );
+      }
+      if (payload?.type === "access_denied") {
+        throw new Error(
+          `Phoenix startup preflight failed for${target} ${check.config.server}: Phoenix is reachable but rejected the configured credentials (HTTP ${payload.status}): ${formatPhoenixError(error)}. ` +
+            "Check that the configured token/tokenFile contents (or mTLS client certificate) match a registered Phoenix agent for this identity. No token material is included in this message.",
+        );
+      }
       throw new Error(
         `Phoenix startup preflight failed for${target} ${check.config.server}: ${formatPhoenixError(error)}. ` +
           "Check the server URL, network reachability, and any configured token, certificate, or seal key paths.",
