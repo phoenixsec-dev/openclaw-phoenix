@@ -353,6 +353,18 @@ if (!fs.existsSync(path.join(OPENCLAW_REPO, "package.json"))) {
     }
 
     assert.equal(captured.services.length, 1);
+    // Registration contract with the real gateway loader: since OpenClaw
+    // 2026.6.x, plugin services are only started for plugins in the gateway
+    // startup set, and a tool-only plugin is excluded from that set unless its
+    // manifest declares activation.onStartup === true (gateway-startup-plugin-ids
+    // shouldConsiderForGatewayStartup). Without it the plugin only loads lazily
+    // for tool calls, the service never starts, and `openclaw plugins inspect
+    // phoenix-secrets` reports services: [].
+    assert.equal(
+      (manifest.activation as { onStartup?: unknown } | undefined)?.onStartup,
+      true,
+      "plugin registers a service, so openclaw.plugin.json must declare activation.onStartup: true or the real gateway never starts it",
+    );
     const service = captured.services[0] as { id?: unknown; start?: (ctx: { logger: { warn: (message: string) => void } }) => Promise<void> };
     assert.equal(service.id, "phoenix-startup-check");
     assert.equal(typeof service.start, "function");

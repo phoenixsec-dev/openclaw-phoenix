@@ -8,6 +8,7 @@
     ]
   },
   "activation": {
+    "onStartup": true,
     "onCapabilities": [
       "tool"
     ]
