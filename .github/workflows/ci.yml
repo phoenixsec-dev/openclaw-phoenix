@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # package.json requires node >=22. 22 is the proven baseline; 24 is
+        # here to catch forward-compat breakage in the built-in test runner
+        # and TypeScript type stripping, which this repo relies on.
+        node-version: ["22", "24"]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      # No install step: this package has zero runtime and dev dependencies by
+      # design, and ships no lockfile, so `npm ci` would fail and `npm install`
+      # would be a no-op.
+      - name: Test
+        run: npm test
+
+      - name: Plugin smoke
+        run: npm run smoke
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      # openclaw.plugin.json is generated from src/config.ts. Fail if someone
+      # hand-edits one without regenerating the other.
+      - name: Manifest is in sync
+        run: npm run generate:manifest -- --check
+
+      # This repo is public and ships example configs. It previously shipped a
+      # real operator agent roster, which was scrubbed; this keeps it out.
+      - name: Secret and identifier scan
+        run: |
+          set -euo pipefail
+          fail=0
+          # Exclude this workflow, which necessarily contains the patterns.
+          scan() {
+            local label="$1" pattern="$2"
+            local hits
+            hits=$(git ls-files -z ':!.github/workflows/*' \
+              | xargs -0 grep -nIE "$pattern" \
+              | grep -viE 'synthetic|example|placeholder|not-real|dummy|fake' || true)
+            if [ -n "$hits" ]; then
+              echo "::error::$label"
+              echo "$hits"
+              fail=1
+            fi
+          }
+          scan "private network address" '192\.168\.[0-9]+\.[0-9]+|10\.[0-9]+\.[0-9]+\.[0-9]+|172\.(1[6-9]|2[0-9]|3[01])\.[0-9]+\.[0-9]+'
+          scan "credential-shaped string" 'ghp_[A-Za-z0-9]{20}|sk-[A-Za-z0-9]{20}|xox[baprs]-|AKIA[0-9A-Z]{16}|eyJ[A-Za-z0-9_-]{20}'
+          scan "private key material" 'BEGIN (RSA |EC |OPENSSH |DSA )?PRIVATE KEY'
+          scan "operator agent identifier" 'openclaw-(kit|relay)|PHOENIX_(TOKEN_FILE|SEAL_KEY)_(KIT|RELAY)'
+          if [ "$fail" -ne 0 ]; then
+            echo "Scan failed. Use synthetic values in examples, docs, and tests."
+            exit 1
+          fi
+          echo "Scan clean."
