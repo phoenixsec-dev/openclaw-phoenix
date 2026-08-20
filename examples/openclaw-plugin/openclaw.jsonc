@@ -13,25 +13,15 @@
               sealKeyFile: "${PHOENIX_SEAL_KEY_MAIN}",
               defaultNamespace: "${PHOENIX_DEFAULT_NAMESPACE_MAIN}"
             },
-            kit: {
-              tokenFile: "${PHOENIX_TOKEN_FILE_KIT}",
-              sealKeyFile: "${PHOENIX_SEAL_KEY_KIT}",
-              defaultNamespace: "${PHOENIX_DEFAULT_NAMESPACE_KIT}"
+            "example-agent": {
+              tokenFile: "${PHOENIX_TOKEN_FILE_EXAMPLE_AGENT}",
+              sealKeyFile: "${PHOENIX_SEAL_KEY_EXAMPLE_AGENT}",
+              defaultNamespace: "${PHOENIX_DEFAULT_NAMESPACE_EXAMPLE_AGENT}"
             },
-            phoenix: {
-              tokenFile: "${PHOENIX_TOKEN_FILE_PHOENIX}",
-              sealKeyFile: "${PHOENIX_SEAL_KEY_PHOENIX}",
-              defaultNamespace: "${PHOENIX_DEFAULT_NAMESPACE_PHOENIX}"
-            },
-            echo: {
-              tokenFile: "${PHOENIX_TOKEN_FILE_ECHO}",
-              sealKeyFile: "${PHOENIX_SEAL_KEY_ECHO}",
-              defaultNamespace: "${PHOENIX_DEFAULT_NAMESPACE_ECHO}"
-            },
-            relay: {
-              tokenFile: "${PHOENIX_TOKEN_FILE_RELAY}",
-              sealKeyFile: "${PHOENIX_SEAL_KEY_RELAY}",
-              defaultNamespace: "${PHOENIX_DEFAULT_NAMESPACE_RELAY}"
+            "my-agent": {
+              tokenFile: "${PHOENIX_TOKEN_FILE_MY_AGENT}",
+              sealKeyFile: "${PHOENIX_SEAL_KEY_MY_AGENT}",
+              defaultNamespace: "${PHOENIX_DEFAULT_NAMESPACE_MY_AGENT}"
             }
           }
         }

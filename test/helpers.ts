@@ -44,28 +44,28 @@ export async function withAgentIdentityFiles(
   run: (files: {
     mainTokenFile: string;
     mainSealKeyFile: string;
-    kitTokenFile: string;
-    kitSealKeyFile: string;
+    exampleAgentTokenFile: string;
+    exampleAgentSealKeyFile: string;
   }) => Promise<void>,
 ) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-phoenix-agent-identity-test-"));
   const files = {
     mainTokenFile: path.join(dir, "main.token"),
     mainSealKeyFile: path.join(dir, "main.seal.key"),
-    kitTokenFile: path.join(dir, "kit.token"),
-    kitSealKeyFile: path.join(dir, "kit.seal.key"),
+    exampleAgentTokenFile: path.join(dir, "example-agent.token"),
+    exampleAgentSealKeyFile: path.join(dir, "example-agent.seal.key"),
   };
   await fs.writeFile(files.mainTokenFile, "main-token\n", { encoding: "utf8", mode: 0o600 });
-  await fs.writeFile(files.kitTokenFile, "kit-token\n", { encoding: "utf8", mode: 0o600 });
+  await fs.writeFile(files.exampleAgentTokenFile, "example-agent-token\n", { encoding: "utf8", mode: 0o600 });
   await fs.writeFile(files.mainSealKeyFile, `${TEST_SEAL_PRIVATE_KEY}\n`, { encoding: "utf8", mode: 0o600 });
-  await fs.writeFile(files.kitSealKeyFile, `${TEST_SEAL_PRIVATE_KEY_B}\n`, { encoding: "utf8", mode: 0o600 });
+  await fs.writeFile(files.exampleAgentSealKeyFile, `${TEST_SEAL_PRIVATE_KEY_B}\n`, { encoding: "utf8", mode: 0o600 });
   try {
     await run(files);
   } finally {
     await fs.unlink(files.mainTokenFile).catch(() => undefined);
-    await fs.unlink(files.kitTokenFile).catch(() => undefined);
+    await fs.unlink(files.exampleAgentTokenFile).catch(() => undefined);
     await fs.unlink(files.mainSealKeyFile).catch(() => undefined);
-    await fs.unlink(files.kitSealKeyFile).catch(() => undefined);
+    await fs.unlink(files.exampleAgentSealKeyFile).catch(() => undefined);
     await fs.rmdir(dir).catch(() => undefined);
   }
 }

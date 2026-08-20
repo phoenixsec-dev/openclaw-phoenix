@@ -48,15 +48,15 @@ Release coordination checks:
 
 ## Per-agent rollout inventory
 
-Status is unknown until an operator validates each item in the target environment. Do not print token values, private keys, plaintext secrets, or public keys in this checklist or Whiteboard notes. If a human intentionally records public-key fingerprints, record fingerprints only.
+Status is unknown until an operator validates each item in the target environment. Do not print token values, private keys, plaintext secrets, or public keys in this checklist or accompanying task-tracker notes. If a human intentionally records public-key fingerprints, record fingerprints only.
+
+The agent rows below are placeholders; replace them with your deployment's actual mapped `ctx.agentId` values.
 
 | Agent | Token file exists and mode `0600` | Seal key file exists and mode `0600` | Public seal key registered in Phoenix for matching identity | Phoenix ACL/attestation scopes checked | Live `phoenix_status` works | Live sealed `phoenix_resolve` returns `PHOENIX_SEALED:*` | `phoenix_resolve`/`phoenix_list` allowlist remains gated until validated |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `main` | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] |
-| `kit` | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] |
-| `phoenix` | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] |
-| `echo` | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] |
-| `relay` | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] |
+| `example-agent` | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] |
+| `my-agent` | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] |
 
 Validation notes:
 
@@ -70,7 +70,7 @@ Validation notes:
 Do not enable broad `phoenix_resolve` or `phoenix_list` access until all of the following are true:
 
 1. Phoenix server audit-only handling for the exact `X-OpenClaw-*` headers above is merged/verified in the target Phoenix deployment.
-2. Every mapped agent (`main`, `kit`, `phoenix`, `echo`, `relay`) has a unique scoped token file and, when sealed mode is enabled, a unique seal-key file with group/other permissions cleared (`0600` recommended).
+2. Every mapped agent (for example `main`, `example-agent`, `my-agent`) has a unique scoped token file and, when sealed mode is enabled, a unique seal-key file with group/other permissions cleared (`0600` recommended).
 3. Every mapped agent's derived public seal key is registered in Phoenix for the matching identity.
 4. Phoenix ACL and attestation scopes are checked for each mapped identity.
 5. `phoenix_status` succeeds for each mapped identity.

@@ -236,7 +236,7 @@ if (!availability.ok) {
         sealMode: false,
         agents: {
           main: { tokenFile: mainTokenFile, defaultNamespace: "openclaw-int" },
-          kit: { tokenFile: outsiderTokenFile, defaultNamespace: "other-ns" },
+          outsider: { tokenFile: outsiderTokenFile, defaultNamespace: "other-ns" },
         },
       };
       await runPhoenixStartupCheck(config);

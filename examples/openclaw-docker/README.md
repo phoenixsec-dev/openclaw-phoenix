@@ -21,7 +21,7 @@ Phoenix is LAN-scoped by design; internet/WAN exposure is out of scope and unsup
 These examples intentionally use environment variables and mounted files only.
 Do not commit real tokens, certificates, or seal private keys.
 
-Because `openclaw.jsonc` enables sealed mode and per-agent identities, create/register a Phoenix token file and seal key file for each mapped agent (`main`, `kit`, `phoenix`, `echo`, `relay`). Set the matching `PHOENIX_TOKEN_FILE_*_HOST` and `PHOENIX_SEAL_KEY_*_HOST` values. Lock down both host token files and host seal key files before starting Compose (for example, `chmod 600 ./tokens/echo ./keys/echo.seal.key`); group/other bits must be clear. The compose files mount all token/seal-key files read-only inside the gateway container, but read-only mounts alone do not satisfy the plugin's permission checks.
+Because `openclaw.jsonc` enables sealed mode and per-agent identities, create/register a Phoenix token file and seal key file for each mapped agent (`main`, `example-agent`, `my-agent` in this example). Set the matching `PHOENIX_TOKEN_FILE_*_HOST` and `PHOENIX_SEAL_KEY_*_HOST` values. Lock down both host token files and host seal key files before starting Compose (for example, `chmod 600 ./tokens/example-agent ./keys/example-agent.seal.key`); group/other bits must be clear. The compose files mount all token/seal-key files read-only inside the gateway container, but read-only mounts alone do not satisfy the plugin's permission checks.
 
 ## Files
 

@@ -96,12 +96,12 @@ test("resolvePhoenixPluginConfig accepts per-agent identity mappings without top
           sealKeyFile: "./main.seal.key",
           defaultNamespace: "openclaw-main",
         },
-        kit: {
-          server: "https://phoenix-kit.internal:9090/",
-          tokenFile: "./kit.token",
-          sealKeyFile: "./kit.seal.key",
-          defaultNamespace: "openclaw-kit",
-          caCert: "./kit-ca.crt",
+        "example-agent": {
+          server: "https://phoenix-example-agent.internal:9090/",
+          tokenFile: "./example-agent.token",
+          sealKeyFile: "./example-agent.seal.key",
+          defaultNamespace: "openclaw-example-agent",
+          caCert: "./example-agent-ca.crt",
         },
       },
     },
@@ -117,8 +117,8 @@ test("resolvePhoenixPluginConfig accepts per-agent identity mappings without top
   assert.equal(config.agents?.main?.tokenFile, "/resolved/./main.token");
   assert.equal(config.agents?.main?.sealKeyFile, "/resolved/./main.seal.key");
   assert.equal(config.agents?.main?.defaultNamespace, "openclaw-main");
-  assert.equal(config.agents?.kit?.server, "https://phoenix-kit.internal:9090");
-  assert.equal(config.agents?.kit?.caCert, "/resolved/./kit-ca.crt");
+  assert.equal(config.agents?.["example-agent"]?.server, "https://phoenix-example-agent.internal:9090");
+  assert.equal(config.agents?.["example-agent"]?.caCert, "/resolved/./example-agent-ca.crt");
 });
 
 test("resolvePhoenixPluginConfig rejects invalid agent ids and accepts free-form valid ids", () => {
@@ -230,10 +230,10 @@ test("resolvePhoenixPluginConfig rejects duplicate per-agent token files and sea
               sealKeyFile: "./main.seal.key",
               defaultNamespace: "openclaw-main",
             },
-            kit: {
+            "example-agent": {
               tokenFile: "./shared.token",
-              sealKeyFile: "./kit.seal.key",
-              defaultNamespace: "openclaw-kit",
+              sealKeyFile: "./example-agent.seal.key",
+              defaultNamespace: "openclaw-example-agent",
             },
           },
         },
@@ -254,10 +254,10 @@ test("resolvePhoenixPluginConfig rejects duplicate per-agent token files and sea
               sealKeyFile: "./shared.seal.key",
               defaultNamespace: "openclaw-main",
             },
-            kit: {
-              tokenFile: "./kit.token",
+            "example-agent": {
+              tokenFile: "./example-agent.token",
               sealKeyFile: "./shared.seal.key",
-              defaultNamespace: "openclaw-kit",
+              defaultNamespace: "openclaw-example-agent",
             },
           },
         },
@@ -454,15 +454,15 @@ test("collectPhoenixTransportWarnings covers per-agent server overrides and dedu
           tokenFile: "./main.token",
           defaultNamespace: "openclaw-main",
         },
-        kit: {
+        "example-agent": {
           server: "http://192.0.2.10:9090",
-          tokenFile: "./kit.token",
-          defaultNamespace: "openclaw-kit",
+          tokenFile: "./example-agent.token",
+          defaultNamespace: "openclaw-example-agent",
         },
-        echo: {
+        "my-agent": {
           server: "http://192.0.2.10:9090",
-          tokenFile: "./echo.token",
-          defaultNamespace: "openclaw-echo",
+          tokenFile: "./my-agent.token",
+          defaultNamespace: "openclaw-my-agent",
         },
       },
     },

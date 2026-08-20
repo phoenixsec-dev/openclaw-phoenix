@@ -88,25 +88,15 @@ Recommended live configuration maps trusted OpenClaw runtime agent ids to separa
               sealKeyFile: "/home/openclaw/.config/phoenix/keys/main.seal.key",
               defaultNamespace: "openclaw-main"
             },
-            kit: {
-              tokenFile: "/home/openclaw/.config/phoenix/tokens/kit",
-              sealKeyFile: "/home/openclaw/.config/phoenix/keys/kit.seal.key",
-              defaultNamespace: "openclaw-kit"
+            "example-agent": {
+              tokenFile: "/home/openclaw/.config/phoenix/tokens/example-agent",
+              sealKeyFile: "/home/openclaw/.config/phoenix/keys/example-agent.seal.key",
+              defaultNamespace: "openclaw-example-agent"
             },
-            phoenix: {
-              tokenFile: "/home/openclaw/.config/phoenix/tokens/phoenix",
-              sealKeyFile: "/home/openclaw/.config/phoenix/keys/phoenix.seal.key",
-              defaultNamespace: "openclaw-phoenix"
-            },
-            echo: {
-              tokenFile: "/home/openclaw/.config/phoenix/tokens/echo",
-              sealKeyFile: "/home/openclaw/.config/phoenix/keys/echo.seal.key",
-              defaultNamespace: "openclaw-echo"
-            },
-            relay: {
-              tokenFile: "/home/openclaw/.config/phoenix/tokens/relay",
-              sealKeyFile: "/home/openclaw/.config/phoenix/keys/relay.seal.key",
-              defaultNamespace: "openclaw-relay"
+            "my-agent": {
+              tokenFile: "/home/openclaw/.config/phoenix/tokens/my-agent",
+              sealKeyFile: "/home/openclaw/.config/phoenix/keys/my-agent.seal.key",
+              defaultNamespace: "openclaw-my-agent"
             }
           }
         }

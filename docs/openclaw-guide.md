@@ -109,25 +109,15 @@ Then enable/configure the `phoenix-secrets` plugin in OpenClaw config with per-a
               sealKeyFile: "/home/openclaw/.config/phoenix/keys/main.seal.key",
               defaultNamespace: "openclaw-main"
             },
-            kit: {
-              tokenFile: "/home/openclaw/.config/phoenix/tokens/kit",
-              sealKeyFile: "/home/openclaw/.config/phoenix/keys/kit.seal.key",
-              defaultNamespace: "openclaw-kit"
+            "example-agent": {
+              tokenFile: "/home/openclaw/.config/phoenix/tokens/example-agent",
+              sealKeyFile: "/home/openclaw/.config/phoenix/keys/example-agent.seal.key",
+              defaultNamespace: "openclaw-example-agent"
             },
-            phoenix: {
-              tokenFile: "/home/openclaw/.config/phoenix/tokens/phoenix",
-              sealKeyFile: "/home/openclaw/.config/phoenix/keys/phoenix.seal.key",
-              defaultNamespace: "openclaw-phoenix"
-            },
-            echo: {
-              tokenFile: "/home/openclaw/.config/phoenix/tokens/echo",
-              sealKeyFile: "/home/openclaw/.config/phoenix/keys/echo.seal.key",
-              defaultNamespace: "openclaw-echo"
-            },
-            relay: {
-              tokenFile: "/home/openclaw/.config/phoenix/tokens/relay",
-              sealKeyFile: "/home/openclaw/.config/phoenix/keys/relay.seal.key",
-              defaultNamespace: "openclaw-relay"
+            "my-agent": {
+              tokenFile: "/home/openclaw/.config/phoenix/tokens/my-agent",
+              sealKeyFile: "/home/openclaw/.config/phoenix/keys/my-agent.seal.key",
+              defaultNamespace: "openclaw-my-agent"
             }
           }
         }
@@ -172,7 +162,7 @@ Config fields:
 
 - `server` — Phoenix base URL, inherited by per-agent mappings unless an agent overrides it
 - `sealMode` — when true, `phoenix_resolve` returns `PHOENIX_SEALED:` tokens; inherited by agents unless they override it
-- `agents` — mapping from trusted OpenClaw `ctx.agentId` values (`main`, `kit`, `phoenix`, `echo`, `relay`) to Phoenix identities
+- `agents` — mapping from trusted OpenClaw `ctx.agentId` values (for example `main`, `example-agent`, `my-agent`) to Phoenix identities
 - `agents.<id>.tokenFile` — required per-agent bearer token file; must be unique across mapped agents and locked down with no group/other permission bits (`chmod 600` recommended)
 - `agents.<id>.sealKeyFile` — required for that agent when effective `sealMode` is true; must be unique across mapped agents and locked down with no group/other permission bits (`chmod 600` recommended)
 - `agents.<id>.defaultNamespace` — default namespace used when that agent passes bare ids like `api-key`
@@ -199,7 +189,7 @@ When `sealMode` is true, the plugin must use a persistent seal key for the selec
 
 Operational checklist:
 1. Generate a separate seal key pair for each OpenClaw agent identity, writing each private key to a local file.
-2. Keep token files and private key files mounted/readable only by the OpenClaw gateway process; do not commit them. Use restrictive permissions such as `chmod 600 /path/to/echo.token /path/to/echo.seal.key`.
+2. Keep token files and private key files mounted/readable only by the OpenClaw gateway process; do not commit them. Use restrictive permissions such as `chmod 600 /path/to/example-agent.token /path/to/example-agent.seal.key`.
 3. Register each derived/printed public key with Phoenix for the matching agent or role-session identity before live requests.
 4. Use live tool calls from each agent identity to validate Phoenix-side public-key registration and policy. `openclaw phoenix verify` is a diagnostic shared-identity helper and does not prove every runtime agent identity is authorized.
 5. Keep `phoenix_resolve` and `phoenix_list` denied until scoped auth, per-agent identity mapping, and sealed behavior are validated.
@@ -223,7 +213,7 @@ When any configured server URL (top-level or per-agent override) is plain `http:
 
 Use this for simple local/dev setups and per-agent runtime identities.
 
-- for live tools, prefer `agents.<id>.tokenFile` pointing at an existing scoped token file for each mapped OpenClaw agent; use restrictive permissions such as `chmod 600 /path/to/echo.token`
+- for live tools, prefer `agents.<id>.tokenFile` pointing at an existing scoped token file for each mapped OpenClaw agent; use restrictive permissions such as `chmod 600 /path/to/example-agent.token`
 - top-level `tokenFile`/`PHOENIX_TOKEN_FILE` is diagnostic/dev only and does not provide per-agent isolation
 - if you inject `PHOENIX_TOKEN` directly, scope it narrowly and understand it becomes part of the gateway process environment
 - do **not** use a broad admin token as the normal gateway credential
