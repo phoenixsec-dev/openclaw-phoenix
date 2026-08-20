@@ -17,7 +17,7 @@
 
 **Date:** 2026-03-22 (v2 rewrite)
 **Status:** Draft — ready for review (see superseded banner above)
-**Author:** Phoenix maintainers (via Claude Code planning session)
+**Author:** Aaron (via Claude Code planning session)
 **Supersedes:** v1 of this file (2026-03-20) — corrected factual errors about
 OpenClaw's plugin architecture and exec protocol, reoriented around plugin-first
 approach
