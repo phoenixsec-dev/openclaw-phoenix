@@ -133,6 +133,23 @@ adopts:
 Phoenix should handle all tiers, but step-up approval and strict attestation
 are most critical for Tier 2.
 
+### Transport model (decided 2026-08)
+
+Phoenix is LAN-scoped by design: internet/WAN exposure is out of scope and
+unsupported. Loopback plaintext (`http://127.0.0.1:9090`) is the supported
+default because loopback traffic never reaches a NIC. A LAN is in scope but
+is **not** a trust boundary — containers on shared bridges, IoT, guest WiFi,
+and any compromised host can read plaintext traffic, and one sniffed bearer
+token yields everything that token's ACL permits. So: enable TLS whenever a
+request crosses a wire (`https://` plus `caCert`/`PHOENIX_CA_CERT`; mTLS is
+optional and separate).
+
+The plugin warns loudly on non-loopback plain `http://` — via the startup
+preflight log, `phoenix_status` `notes`, and `openclaw phoenix verify`
+`warnings` — and never refuses, because this package is published and
+hard-failing would break existing deployments. `phoenix-server` and the
+Hermes plugin share the same warn-never-refuse posture.
+
 ---
 
 ## Gaps
@@ -279,6 +296,11 @@ Exec provider config:
   }
 }
 ```
+
+Note: `http://phoenix:9090` above is plaintext across a non-loopback Compose
+bridge — acceptable only for a trusted single-host lab stack, and the plugin
+warns about it. Use `https://` with `PHOENIX_CA_CERT` whenever the traffic
+crosses a wire (see "Transport model" above).
 
 Key constraints:
 - `shell: false` — no shell parsing, args as array

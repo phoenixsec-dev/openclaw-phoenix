@@ -1,3 +1,8 @@
+# mTLS variant. This is the enable-TLS-when-crossing-a-wire pattern: gateway
+# traffic to Phoenix is encrypted (https:// + CA cert), with client
+# certificates layered on top for machine identity. Prefer this whenever
+# gateway-to-Phoenix traffic leaves loopback and the bridge is not a trusted
+# single-host lab network. Phoenix is LAN-scoped; WAN exposure is unsupported.
 services:
   phoenix:
     image: ghcr.io/phoenixsec-dev/phoenix:latest
@@ -25,15 +30,11 @@ services:
       - ./openclaw.jsonc:/root/.openclaw/openclaw.jsonc:ro
       # Host token/seal-key files must be chmod 600-style before mounting; :ro is not enough.
       - ${PHOENIX_TOKEN_FILE_MAIN_HOST}:${PHOENIX_TOKEN_FILE_MAIN}:ro
-      - ${PHOENIX_TOKEN_FILE_KIT_HOST}:${PHOENIX_TOKEN_FILE_KIT}:ro
-      - ${PHOENIX_TOKEN_FILE_PHOENIX_HOST}:${PHOENIX_TOKEN_FILE_PHOENIX}:ro
-      - ${PHOENIX_TOKEN_FILE_ECHO_HOST}:${PHOENIX_TOKEN_FILE_ECHO}:ro
-      - ${PHOENIX_TOKEN_FILE_RELAY_HOST}:${PHOENIX_TOKEN_FILE_RELAY}:ro
+      - ${PHOENIX_TOKEN_FILE_EXAMPLE_AGENT_HOST}:${PHOENIX_TOKEN_FILE_EXAMPLE_AGENT}:ro
+      - ${PHOENIX_TOKEN_FILE_MY_AGENT_HOST}:${PHOENIX_TOKEN_FILE_MY_AGENT}:ro
       - ${PHOENIX_SEAL_KEY_MAIN_HOST}:${PHOENIX_SEAL_KEY_MAIN}:ro
-      - ${PHOENIX_SEAL_KEY_KIT_HOST}:${PHOENIX_SEAL_KEY_KIT}:ro
-      - ${PHOENIX_SEAL_KEY_PHOENIX_HOST}:${PHOENIX_SEAL_KEY_PHOENIX}:ro
-      - ${PHOENIX_SEAL_KEY_ECHO_HOST}:${PHOENIX_SEAL_KEY_ECHO}:ro
-      - ${PHOENIX_SEAL_KEY_RELAY_HOST}:${PHOENIX_SEAL_KEY_RELAY}:ro
+      - ${PHOENIX_SEAL_KEY_EXAMPLE_AGENT_HOST}:${PHOENIX_SEAL_KEY_EXAMPLE_AGENT}:ro
+      - ${PHOENIX_SEAL_KEY_MY_AGENT_HOST}:${PHOENIX_SEAL_KEY_MY_AGENT}:ro
       - /path/to/phoenix-ca.crt:/run/phoenix/ca.crt:ro
       - /path/to/openclaw-client.crt:/run/phoenix/client.crt:ro
       - /path/to/openclaw-client.key:/run/phoenix/client.key:ro

@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { phoenixPluginConfigSchema, resolvePhoenixPluginConfig } from "../src/config.ts";
+import {
+  collectPhoenixTransportWarnings,
+  getPhoenixTransportWarning,
+  phoenixPluginConfigSchema,
+  resolvePhoenixPluginConfig,
+} from "../src/config.ts";
 
 test("resolvePhoenixPluginConfig reads env fallbacks and resolves paths", () => {
   const config = resolvePhoenixPluginConfig(
@@ -91,12 +96,12 @@ test("resolvePhoenixPluginConfig accepts per-agent identity mappings without top
           sealKeyFile: "./main.seal.key",
           defaultNamespace: "openclaw-main",
         },
-        kit: {
-          server: "https://phoenix-kit.internal:9090/",
-          tokenFile: "./kit.token",
-          sealKeyFile: "./kit.seal.key",
-          defaultNamespace: "openclaw-kit",
-          caCert: "./kit-ca.crt",
+        "example-agent": {
+          server: "https://phoenix-example-agent.internal:9090/",
+          tokenFile: "./example-agent.token",
+          sealKeyFile: "./example-agent.seal.key",
+          defaultNamespace: "openclaw-example-agent",
+          caCert: "./example-agent-ca.crt",
         },
       },
     },
@@ -112,8 +117,8 @@ test("resolvePhoenixPluginConfig accepts per-agent identity mappings without top
   assert.equal(config.agents?.main?.tokenFile, "/resolved/./main.token");
   assert.equal(config.agents?.main?.sealKeyFile, "/resolved/./main.seal.key");
   assert.equal(config.agents?.main?.defaultNamespace, "openclaw-main");
-  assert.equal(config.agents?.kit?.server, "https://phoenix-kit.internal:9090");
-  assert.equal(config.agents?.kit?.caCert, "/resolved/./kit-ca.crt");
+  assert.equal(config.agents?.["example-agent"]?.server, "https://phoenix-example-agent.internal:9090");
+  assert.equal(config.agents?.["example-agent"]?.caCert, "/resolved/./example-agent-ca.crt");
 });
 
 test("resolvePhoenixPluginConfig rejects invalid agent ids and accepts free-form valid ids", () => {
@@ -225,10 +230,10 @@ test("resolvePhoenixPluginConfig rejects duplicate per-agent token files and sea
               sealKeyFile: "./main.seal.key",
               defaultNamespace: "openclaw-main",
             },
-            kit: {
+            "example-agent": {
               tokenFile: "./shared.token",
-              sealKeyFile: "./kit.seal.key",
-              defaultNamespace: "openclaw-kit",
+              sealKeyFile: "./example-agent.seal.key",
+              defaultNamespace: "openclaw-example-agent",
             },
           },
         },
@@ -249,10 +254,10 @@ test("resolvePhoenixPluginConfig rejects duplicate per-agent token files and sea
               sealKeyFile: "./shared.seal.key",
               defaultNamespace: "openclaw-main",
             },
-            kit: {
-              tokenFile: "./kit.token",
+            "example-agent": {
+              tokenFile: "./example-agent.token",
               sealKeyFile: "./shared.seal.key",
-              defaultNamespace: "openclaw-kit",
+              defaultNamespace: "openclaw-example-agent",
             },
           },
         },
@@ -399,6 +404,88 @@ test("resolvePhoenixPluginConfig rejects malformed configs", () => {
       `expected config case "${testCase.name}" to be rejected`,
     );
   }
+});
+
+test("getPhoenixTransportWarning warns on non-loopback plain http", () => {
+  for (const server of [
+    "http://192.0.2.10:9090",
+    "http://phoenix:9090",
+    "http://phoenix.internal:9090",
+    "http://[2001:db8::10]:9090",
+    "http://0.0.0.0:9090",
+  ]) {
+    const warning = getPhoenixTransportWarning(server);
+    assert.ok(warning, `expected a transport warning for ${server}`);
+    assert.ok(warning.includes(server), "warning must name the offending server URL");
+    assert.match(warning, /bearer token/);
+    assert.match(warning, /secret values/);
+    assert.match(warning, /cleartext/);
+    assert.match(warning, /network segment/);
+    assert.match(warning, /https:\/\//, "warning must point at the fix");
+  }
+});
+
+test("getPhoenixTransportWarning stays silent on loopback http and on https", () => {
+  for (const server of [
+    "http://127.0.0.1:9090",
+    "http://127.8.9.10:9090",
+    "http://localhost:9090",
+    "http://dev.localhost:9090",
+    "http://[::1]:9090",
+    "http://[::ffff:127.0.0.1]:9090",
+    "https://phoenix.internal:9090",
+    "https://192.0.2.10:9090",
+  ]) {
+    assert.equal(
+      getPhoenixTransportWarning(server),
+      undefined,
+      `expected no transport warning for ${server}`,
+    );
+  }
+});
+
+test("collectPhoenixTransportWarnings covers per-agent server overrides and dedupes", () => {
+  const config = resolvePhoenixPluginConfig(
+    {
+      server: "http://127.0.0.1:9090",
+      sealMode: false,
+      agents: {
+        main: {
+          tokenFile: "./main.token",
+          defaultNamespace: "openclaw-main",
+        },
+        "example-agent": {
+          server: "http://192.0.2.10:9090",
+          tokenFile: "./example-agent.token",
+          defaultNamespace: "openclaw-example-agent",
+        },
+        "my-agent": {
+          server: "http://192.0.2.10:9090",
+          tokenFile: "./my-agent.token",
+          defaultNamespace: "openclaw-my-agent",
+        },
+      },
+    },
+    { env: {}, resolvePath: (input) => `/resolved/${input}` },
+  );
+
+  const warnings = collectPhoenixTransportWarnings(config);
+  assert.equal(warnings.length, 1, "identical per-agent servers must produce one deduped warning");
+  assert.ok(warnings[0].includes("http://192.0.2.10:9090"));
+});
+
+test("collectPhoenixTransportWarnings is empty for loopback http and non-loopback https", () => {
+  const loopback = resolvePhoenixPluginConfig(
+    { server: "http://127.0.0.1:9090", token: "t", sealMode: false },
+    { env: {} },
+  );
+  assert.deepEqual(collectPhoenixTransportWarnings(loopback), []);
+
+  const https = resolvePhoenixPluginConfig(
+    { server: "https://phoenix.internal:9090", token: "t", sealMode: false },
+    { env: {} },
+  );
+  assert.deepEqual(collectPhoenixTransportWarnings(https), []);
 });
 
 test("phoenixPluginConfigSchema.validate reports errors without throwing", () => {

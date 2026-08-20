@@ -4,6 +4,13 @@ This folder shows two patterns:
 - bearer token auth
 - mTLS auth
 
+## Transport model
+
+Phoenix is LAN-scoped by design; internet/WAN exposure is out of scope and unsupported. Plaintext over loopback is the supported default, but the Compose bridge network between these containers is a non-loopback wire, and a LAN (including container bridges) is not a trust boundary:
+
+- `docker-compose.bearer.yml` with the default `.env` uses `PHOENIX_SERVER=http://phoenix:9090`: the bearer token and resolved secret values cross the bridge in cleartext, readable by anything attached to it. That is acceptable only for a single-host lab stack where every container on the bridge is trusted. The plugin logs a transport security warning for this configuration (startup preflight, `phoenix_status` notes, and `openclaw phoenix verify`); it warns and continues, it does not refuse.
+- `docker-compose.mtls.yml` is the enable-TLS-when-crossing-a-wire variant: `https://` with the Phoenix CA certificate, plus client certificates for machine identity.
+
 ## Usage
 
 1. Copy `.env.example` to `.env`
@@ -14,7 +21,7 @@ This folder shows two patterns:
 These examples intentionally use environment variables and mounted files only.
 Do not commit real tokens, certificates, or seal private keys.
 
-Because `openclaw.jsonc` enables sealed mode and per-agent identities, create/register a Phoenix token file and seal key file for each mapped agent (`main`, `kit`, `phoenix`, `echo`, `relay`). Set the matching `PHOENIX_TOKEN_FILE_*_HOST` and `PHOENIX_SEAL_KEY_*_HOST` values. Lock down both host token files and host seal key files before starting Compose (for example, `chmod 600 ./tokens/echo ./keys/echo.seal.key`); group/other bits must be clear. The compose files mount all token/seal-key files read-only inside the gateway container, but read-only mounts alone do not satisfy the plugin's permission checks.
+Because `openclaw.jsonc` enables sealed mode and per-agent identities, create/register a Phoenix token file and seal key file for each mapped agent (`main`, `example-agent`, `my-agent` in this example). Set the matching `PHOENIX_TOKEN_FILE_*_HOST` and `PHOENIX_SEAL_KEY_*_HOST` values. Lock down both host token files and host seal key files before starting Compose (for example, `chmod 600 ./tokens/example-agent ./keys/example-agent.seal.key`); group/other bits must be clear. The compose files mount all token/seal-key files read-only inside the gateway container, but read-only mounts alone do not satisfy the plugin's permission checks.
 
 ## Files
 

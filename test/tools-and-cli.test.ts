@@ -8,7 +8,7 @@ import {
   runPhoenixStartupCheck,
   runPhoenixStartupPreflightWarningOnly,
 } from "../src/startup.ts";
-import { verifyPhoenixRefsInConfig } from "../src/cli.ts";
+import { registerPhoenixCli, verifyPhoenixRefsInConfig } from "../src/cli.ts";
 import {
   TEST_SEAL_PRIVATE_KEY,
   TEST_SEAL_PRIVATE_KEY_B,
@@ -231,10 +231,10 @@ test("per-agent identity is selected from runtime context only and keeps sealed 
             sealKeyFile: files.mainSealKeyFile,
             defaultNamespace: "main-ns",
           },
-          kit: {
-            tokenFile: files.kitTokenFile,
-            sealKeyFile: files.kitSealKeyFile,
-            defaultNamespace: "kit-ns",
+          "example-agent": {
+            tokenFile: files.exampleAgentTokenFile,
+            sealKeyFile: files.exampleAgentSealKeyFile,
+            defaultNamespace: "example-agent-ns",
           },
         },
       };
@@ -242,40 +242,40 @@ test("per-agent identity is selected from runtime context only and keeps sealed 
       const mainTool = createPhoenixResolveTool(config, { agentId: "main" });
       const mainResult = await mainTool.execute("tool-main", {
         refs: ["key"],
-        agentId: "kit",
-        identity: "kit",
-        tokenFile: files.kitTokenFile,
+        agentId: "example-agent",
+        identity: "example-agent",
+        tokenFile: files.exampleAgentTokenFile,
       });
-      const kitTool = createPhoenixResolveTool(config, { agentId: "kit" });
-      const kitResult = await kitTool.execute("tool-kit", {
+      const exampleAgentTool = createPhoenixResolveTool(config, { agentId: "example-agent" });
+      const exampleAgentResult = await exampleAgentTool.execute("tool-example-agent", {
         refs: ["key"],
         agentId: "main",
         identity: "main",
         tokenFile: files.mainTokenFile,
       });
 
-      for (const result of [mainResult, kitResult]) {
+      for (const result of [mainResult, exampleAgentResult]) {
         const text = result.content.map((entry) => entry.text).join("\n");
         const serializedDetails = JSON.stringify(result.details);
         assert.match(text, /PHOENIX_SEALED:/);
-        assert.doesNotMatch(text, /plain-secret-that-must-not-appear|main-token|kit-token|root-token-that-must-not-be-used/);
-        assert.doesNotMatch(serializedDetails, /plain-secret-that-must-not-appear|main-token|kit-token|root-token-that-must-not-be-used/);
+        assert.doesNotMatch(text, /plain-secret-that-must-not-appear|main-token|example-agent-token|root-token-that-must-not-be-used/);
+        assert.doesNotMatch(serializedDetails, /plain-secret-that-must-not-appear|main-token|example-agent-token|root-token-that-must-not-be-used/);
       }
     });
 
     assert.equal(seenRequests.length, 2);
     assert.deepEqual(seenRequests.map((request) => request.authorization), [
       "Bearer main-token",
-      "Bearer kit-token",
+      "Bearer example-agent-token",
     ]);
     assert.deepEqual(seenRequests.map((request) => request.sealKey), [
       TEST_SEAL_PUBLIC_KEY,
       TEST_SEAL_PUBLIC_KEY_B,
     ]);
-    assert.deepEqual(seenRequests.map((request) => request.agent), ["main", "kit"]);
+    assert.deepEqual(seenRequests.map((request) => request.agent), ["main", "example-agent"]);
     assert.deepEqual(seenRequests.map((request) => request.refs), [
       ["phoenix://main-ns/key"],
-      ["phoenix://kit-ns/key"],
+      ["phoenix://example-agent-ns/key"],
     ]);
   });
 });
@@ -291,15 +291,15 @@ test("runtime tools fail closed when mapped agents share token or seal key mater
           sealKeyFile: files.mainSealKeyFile,
           defaultNamespace: "main-ns",
         },
-        kit: {
-          tokenFile: files.kitTokenFile,
-          sealKeyFile: files.kitSealKeyFile,
-          defaultNamespace: "kit-ns",
+        "example-agent": {
+          tokenFile: files.exampleAgentTokenFile,
+          sealKeyFile: files.exampleAgentSealKeyFile,
+          defaultNamespace: "example-agent-ns",
         },
       },
     };
 
-    await fs.writeFile(files.kitTokenFile, "main-token\n", { encoding: "utf8", mode: 0o600 });
+    await fs.writeFile(files.exampleAgentTokenFile, "main-token\n", { encoding: "utf8", mode: 0o600 });
     const duplicateTokenResults = [
       await createPhoenixResolveTool(config, { agentId: "main" }).execute("tool-resolve", {
         refs: ["key"],
@@ -319,8 +319,8 @@ test("runtime tools fail closed when mapped agents share token or seal key mater
       assert.match(details.error?.detail ?? "", /token material must be unique/);
     }
 
-    await fs.writeFile(files.kitTokenFile, "kit-token\n", { encoding: "utf8", mode: 0o600 });
-    await fs.writeFile(files.kitSealKeyFile, `${TEST_SEAL_PRIVATE_KEY}\n`, {
+    await fs.writeFile(files.exampleAgentTokenFile, "example-agent-token\n", { encoding: "utf8", mode: 0o600 });
+    await fs.writeFile(files.exampleAgentSealKeyFile, `${TEST_SEAL_PRIVATE_KEY}\n`, {
       encoding: "utf8",
       mode: 0o600,
     });
@@ -348,14 +348,14 @@ test("runtime tools report which agent's identity material is unreadable", async
           tokenFile: files.mainTokenFile,
           defaultNamespace: "main-ns",
         },
-        kit: {
-          tokenFile: files.kitTokenFile,
-          defaultNamespace: "kit-ns",
+        "example-agent": {
+          tokenFile: files.exampleAgentTokenFile,
+          defaultNamespace: "example-agent-ns",
         },
       },
     };
 
-    await fs.unlink(files.kitTokenFile);
+    await fs.unlink(files.exampleAgentTokenFile);
     const result = await createPhoenixResolveTool(config, { agentId: "main" }).execute(
       "tool-resolve",
       { refs: ["key"] },
@@ -367,7 +367,7 @@ test("runtime tools report which agent's identity material is unreadable", async
     assert.equal(details.ok, false);
     assert.equal(details.error?.type, "access_denied");
     assert.equal(details.error?.code, "PHOENIX_IDENTITY_MATERIAL_UNREADABLE");
-    assert.match(details.error?.detail ?? "", /agents\.kit token material/);
+    assert.match(details.error?.detail ?? "", /agents\.example-agent token material/);
   });
 });
 
@@ -569,14 +569,14 @@ test("runPhoenixStartupCheck rejects duplicate per-agent token or seal key mater
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-phoenix-duplicate-identity-test-"));
   const files = {
     mainTokenFile: path.join(dir, "main.token"),
-    kitTokenFile: path.join(dir, "kit.token"),
+    exampleAgentTokenFile: path.join(dir, "example-agent.token"),
     mainSealKeyFile: path.join(dir, "main.seal.key"),
-    kitSealKeyFile: path.join(dir, "kit.seal.key"),
+    exampleAgentSealKeyFile: path.join(dir, "example-agent.seal.key"),
   };
   await fs.writeFile(files.mainTokenFile, "same-token\n", { encoding: "utf8", mode: 0o600 });
-  await fs.writeFile(files.kitTokenFile, "same-token\n", { encoding: "utf8", mode: 0o600 });
+  await fs.writeFile(files.exampleAgentTokenFile, "same-token\n", { encoding: "utf8", mode: 0o600 });
   await fs.writeFile(files.mainSealKeyFile, `${TEST_SEAL_PRIVATE_KEY}\n`, { encoding: "utf8", mode: 0o600 });
-  await fs.writeFile(files.kitSealKeyFile, `${TEST_SEAL_PRIVATE_KEY_B}\n`, { encoding: "utf8", mode: 0o600 });
+  await fs.writeFile(files.exampleAgentSealKeyFile, `${TEST_SEAL_PRIVATE_KEY_B}\n`, { encoding: "utf8", mode: 0o600 });
 
   const config = {
     server: "http://127.0.0.1:1",
@@ -587,10 +587,10 @@ test("runPhoenixStartupCheck rejects duplicate per-agent token or seal key mater
         sealKeyFile: files.mainSealKeyFile,
         defaultNamespace: "main-ns",
       },
-      kit: {
-        tokenFile: files.kitTokenFile,
-        sealKeyFile: files.kitSealKeyFile,
-        defaultNamespace: "kit-ns",
+      "example-agent": {
+        tokenFile: files.exampleAgentTokenFile,
+        sealKeyFile: files.exampleAgentSealKeyFile,
+        defaultNamespace: "example-agent-ns",
       },
     },
   };
@@ -601,17 +601,17 @@ test("runPhoenixStartupCheck rejects duplicate per-agent token or seal key mater
       /token material must be unique/,
     );
 
-    await fs.writeFile(files.kitTokenFile, "kit-token\n", { encoding: "utf8", mode: 0o600 });
-    await fs.writeFile(files.kitSealKeyFile, `${TEST_SEAL_PRIVATE_KEY}\n`, { encoding: "utf8", mode: 0o600 });
+    await fs.writeFile(files.exampleAgentTokenFile, "example-agent-token\n", { encoding: "utf8", mode: 0o600 });
+    await fs.writeFile(files.exampleAgentSealKeyFile, `${TEST_SEAL_PRIVATE_KEY}\n`, { encoding: "utf8", mode: 0o600 });
     await assert.rejects(
       () => runPhoenixStartupCheck(config),
       /seal key material must be unique/,
     );
   } finally {
     await fs.unlink(files.mainTokenFile).catch(() => undefined);
-    await fs.unlink(files.kitTokenFile).catch(() => undefined);
+    await fs.unlink(files.exampleAgentTokenFile).catch(() => undefined);
     await fs.unlink(files.mainSealKeyFile).catch(() => undefined);
-    await fs.unlink(files.kitSealKeyFile).catch(() => undefined);
+    await fs.unlink(files.exampleAgentSealKeyFile).catch(() => undefined);
     await fs.rmdir(dir).catch(() => undefined);
   }
 });
@@ -741,15 +741,15 @@ test("runPhoenixStartupPreflightWarningOnly logs and resolves on duplicate per-a
           sealKeyFile: files.mainSealKeyFile,
           defaultNamespace: "main-ns",
         },
-        kit: {
-          tokenFile: files.kitTokenFile,
-          sealKeyFile: files.kitSealKeyFile,
-          defaultNamespace: "kit-ns",
+        "example-agent": {
+          tokenFile: files.exampleAgentTokenFile,
+          sealKeyFile: files.exampleAgentSealKeyFile,
+          defaultNamespace: "example-agent-ns",
         },
       },
     };
 
-    await fs.writeFile(files.kitTokenFile, "main-token\n", { encoding: "utf8", mode: 0o600 });
+    await fs.writeFile(files.exampleAgentTokenFile, "main-token\n", { encoding: "utf8", mode: 0o600 });
     const tokenWarnings: string[] = [];
     const tokenResult = await runPhoenixStartupPreflightWarningOnly(config, {
       warn: (message) => tokenWarnings.push(message),
@@ -760,8 +760,8 @@ test("runPhoenixStartupPreflightWarningOnly logs and resolves on duplicate per-a
     assert.match(tokenWarnings[0], /PHOENIX_DUPLICATE_IDENTITY_MATERIAL/);
     assert.match(tokenWarnings[0], /token material must be unique/);
 
-    await fs.writeFile(files.kitTokenFile, "kit-token\n", { encoding: "utf8", mode: 0o600 });
-    await fs.writeFile(files.kitSealKeyFile, `${TEST_SEAL_PRIVATE_KEY}\n`, { encoding: "utf8", mode: 0o600 });
+    await fs.writeFile(files.exampleAgentTokenFile, "example-agent-token\n", { encoding: "utf8", mode: 0o600 });
+    await fs.writeFile(files.exampleAgentSealKeyFile, `${TEST_SEAL_PRIVATE_KEY}\n`, { encoding: "utf8", mode: 0o600 });
     const sealKeyWarnings: string[] = [];
     const sealKeyResult = await runPhoenixStartupPreflightWarningOnly(config, {
       warn: (message) => sealKeyWarnings.push(message),
@@ -838,38 +838,38 @@ test("per-agent sealMode:false overrides top-level sealed mode and resolves plai
 test("per-agent server override routes requests to the agent's own server", async () => {
   await withAgentIdentityFiles(async (files) => {
     let topLevelRequests = 0;
-    let kitRequests = 0;
+    let exampleAgentRequests = 0;
     await withServer(async (_topReq, topRes) => {
       topLevelRequests += 1;
       topRes.setHeader("content-type", "application/json");
       topRes.end(JSON.stringify({ values: {} }));
     }, async (topLevelUrl) => {
       await withServer(async (req, res) => {
-        kitRequests += 1;
+        exampleAgentRequests += 1;
         await readRequestJson(req);
         res.setHeader("content-type", "application/json");
-        res.end(JSON.stringify({ values: { "phoenix://kit-ns/key": "value" } }));
-      }, async (kitUrl) => {
+        res.end(JSON.stringify({ values: { "phoenix://example-agent-ns/key": "value" } }));
+      }, async (exampleAgentUrl) => {
         const config = {
           server: topLevelUrl,
           sealMode: false,
           agents: {
-            kit: {
-              server: kitUrl,
-              tokenFile: files.kitTokenFile,
-              defaultNamespace: "kit-ns",
+            "example-agent": {
+              server: exampleAgentUrl,
+              tokenFile: files.exampleAgentTokenFile,
+              defaultNamespace: "example-agent-ns",
             },
           },
         };
 
-        const resolveTool = createPhoenixResolveTool(config, { agentId: "kit" });
-        const result = await resolveTool.execute("tool-kit-server", { refs: ["key"] });
+        const resolveTool = createPhoenixResolveTool(config, { agentId: "example-agent" });
+        const result = await resolveTool.execute("tool-example-agent-server", { refs: ["key"] });
         assert.equal((result.details as { ok: boolean }).ok, true);
       });
     });
 
     assert.equal(topLevelRequests, 0);
-    assert.equal(kitRequests, 1);
+    assert.equal(exampleAgentRequests, 1);
   });
 });
 
@@ -902,16 +902,16 @@ test("runPhoenixStartupCheck runs an authenticated probe for every mapped agent"
             tokenFile: files.mainTokenFile,
             defaultNamespace: "main-ns",
           },
-          kit: {
-            tokenFile: files.kitTokenFile,
-            defaultNamespace: "kit-ns",
+          "example-agent": {
+            tokenFile: files.exampleAgentTokenFile,
+            defaultNamespace: "example-agent-ns",
           },
         },
       };
 
       await runPhoenixStartupCheck(config);
-      assert.deepEqual(healthAgents, ["kit", "main"]);
-      assert.deepEqual(probeTokens, ["Bearer kit-token", "Bearer main-token"]);
+      assert.deepEqual(healthAgents, ["example-agent", "main"]);
+      assert.deepEqual(probeTokens, ["Bearer example-agent-token", "Bearer main-token"]);
 
       healthAgents.length = 0;
       const warnings: string[] = [];
@@ -921,5 +921,115 @@ test("runPhoenixStartupCheck runs an authenticated probe for every mapped agent"
       assert.deepEqual(preflight, { ok: true });
       assert.deepEqual(warnings, []);
     });
+  });
+});
+
+test("verifyPhoenixRefsInConfig surfaces transport warnings without failing", async () => {
+  // No refs in the config snapshot, so this exercises the warning path with
+  // no network traffic at all: the warning comes from configuration alone.
+  const nonLoopback = await verifyPhoenixRefsInConfig(
+    { note: "no refs here" },
+    {
+      server: "http://192.0.2.10:9090",
+      token: "token",
+      sealMode: false,
+    },
+  );
+  assert.equal(nonLoopback.refs.length, 0);
+  assert.equal(nonLoopback.okCount, 0);
+  assert.equal(nonLoopback.failCount, 0);
+  assert.equal(nonLoopback.warnings.length, 1);
+  assert.match(nonLoopback.warnings[0], /cleartext/);
+  assert.ok(nonLoopback.warnings[0].includes("http://192.0.2.10:9090"));
+
+  const loopback = await verifyPhoenixRefsInConfig(
+    { note: "no refs here" },
+    {
+      server: "http://127.0.0.1:9090",
+      token: "token",
+      sealMode: false,
+    },
+  );
+  assert.deepEqual(loopback.warnings, []);
+
+  const https = await verifyPhoenixRefsInConfig(
+    { note: "no refs here" },
+    {
+      server: "https://phoenix.internal:9090",
+      token: "token",
+      sealMode: false,
+    },
+  );
+  assert.deepEqual(https.warnings, []);
+});
+
+test("openclaw phoenix verify CLI logs transport warnings through the logger", async () => {
+  const actions = new Map<string, () => Promise<void> | void>();
+  const makeCommand = (name: string) => {
+    const command = {
+      command: (subName: string) => makeCommand(`${name} ${subName}`),
+      description: () => command,
+      action: (handler: () => Promise<void> | void) => {
+        actions.set(name, handler);
+        return command;
+      },
+    };
+    return command;
+  };
+
+  const infoMessages: string[] = [];
+  const warnMessages: string[] = [];
+  registerPhoenixCli({
+    program: { command: (name: string) => makeCommand(name) },
+    openClawConfig: { note: "no refs here" },
+    pluginConfig: {
+      server: "http://192.0.2.10:9090",
+      token: "token",
+      sealMode: false,
+    },
+    logger: {
+      info: (message) => infoMessages.push(message),
+      warn: (message) => warnMessages.push(message),
+    },
+  });
+
+  const verifyAction = actions.get("phoenix verify");
+  assert.ok(verifyAction, "phoenix verify CLI action must be registered");
+  await verifyAction();
+
+  assert.equal(warnMessages.length, 1);
+  assert.match(warnMessages[0], /cleartext/);
+  assert.ok(warnMessages[0].includes("http://192.0.2.10:9090"));
+  assert.ok(infoMessages.some((message) => message.includes("No phoenix:// refs found")));
+});
+
+test("startup preflight logs a transport warning for non-loopback plain http and still passes", async () => {
+  await withServer(async (req, res) => {
+    res.setHeader("content-type", "application/json");
+    if (req.url?.startsWith("/v1/policy/check")) {
+      res.end(JSON.stringify({ allowed: false }));
+      return;
+    }
+    res.statusCode = 404;
+    res.end(JSON.stringify({ error: "not found" }));
+  }, async (baseUrl) => {
+    // 0.0.0.0 is classified as non-loopback (and warned about), but
+    // connecting to it reaches the local test server on POSIX hosts, so the
+    // preflight itself succeeds while the transport warning fires.
+    const server = `http://0.0.0.0:${new URL(baseUrl).port}`;
+    const warnings: string[] = [];
+    const result = await runPhoenixStartupPreflightWarningOnly(
+      {
+        server,
+        token: "token",
+        sealMode: false,
+      },
+      { warn: (message) => warnings.push(message) },
+    );
+
+    assert.deepEqual(result, { ok: true });
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /cleartext/);
+    assert.ok(warnings[0].includes(server));
   });
 });

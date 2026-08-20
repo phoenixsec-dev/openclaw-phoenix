@@ -23,6 +23,22 @@ Startup preflight is diagnostic only and never fatal: Phoenix down/auth/TLS/seal
 
 Important: this package is a **runtime tool-based integration**. It does **not** hook Phoenix into OpenClaw's built-in SecretRef object resolution, so raw `phoenix://...` strings in gateway config env fields are not supported by this plugin alone. For built-in OpenClaw SecretRefs and bootstrap/config secrets, use Phoenix CLI v0.14.0+ as an exec provider (`phoenix resolve --stdin-json`, alias `phoenix openclaw-exec-provider`).
 
+## Transport security
+
+Phoenix is **LAN-scoped by design**: use across the internet/WAN (public ingress, hostile-network operation) is out of scope and unsupported. Within that envelope:
+
+- **Loopback plaintext is the supported default.** `http://127.0.0.1:9090` never reaches a network interface, and single-machine deployments are the common case.
+- **LAN is in scope but is not a trust boundary.** A LAN includes containers on shared bridges, IoT devices, guest WiFi, and anything that has compromised one host. Phoenix is a credential concentrator: one sniffed bearer token yields everything that token's ACL permits.
+- **Enable TLS whenever requests cross a wire.** Any non-loopback `server` URL should be `https://`, with `caCert` (or `PHOENIX_CA_CERT`) pointed at the Phoenix CA certificate. Phoenix's internal CA issues the server certificate with IP SANs, so `https://<ip>:9090` validates without public DNS, a reverse proxy, or Let's Encrypt.
+
+When a configured Phoenix server URL (top-level or a per-agent override) uses plain `http://` to a non-loopback address, the plugin emits a security warning naming what is exposed — the bearer token and resolved secret values, in cleartext, readable by anything on that network segment — and how to fix it. The warning surfaces in three places:
+
+- the gateway-startup preflight logs it through the gateway's plugin logger
+- `phoenix_status` includes it in its structured `notes`
+- `openclaw phoenix verify` reports it in the result's `warnings` and prints it
+
+The plugin **warns and never refuses**: hard-failing on plain HTTP would break existing published deployments with no migration path. This warn-only posture is deliberate and shared by `phoenix-server` itself and the Hermes Phoenix plugin.
+
 ## Installation
 
 The plugin runs inside the OpenClaw gateway process, so the gateway host's Node version governs: current OpenClaw releases (2026.6.x) require Node >= 22.19.
@@ -72,25 +88,15 @@ Recommended live configuration maps trusted OpenClaw runtime agent ids to separa
               sealKeyFile: "/home/openclaw/.config/phoenix/keys/main.seal.key",
               defaultNamespace: "openclaw-main"
             },
-            kit: {
-              tokenFile: "/home/openclaw/.config/phoenix/tokens/kit",
-              sealKeyFile: "/home/openclaw/.config/phoenix/keys/kit.seal.key",
-              defaultNamespace: "openclaw-kit"
+            "example-agent": {
+              tokenFile: "/home/openclaw/.config/phoenix/tokens/example-agent",
+              sealKeyFile: "/home/openclaw/.config/phoenix/keys/example-agent.seal.key",
+              defaultNamespace: "openclaw-example-agent"
             },
-            phoenix: {
-              tokenFile: "/home/openclaw/.config/phoenix/tokens/phoenix",
-              sealKeyFile: "/home/openclaw/.config/phoenix/keys/phoenix.seal.key",
-              defaultNamespace: "openclaw-phoenix"
-            },
-            echo: {
-              tokenFile: "/home/openclaw/.config/phoenix/tokens/echo",
-              sealKeyFile: "/home/openclaw/.config/phoenix/keys/echo.seal.key",
-              defaultNamespace: "openclaw-echo"
-            },
-            relay: {
-              tokenFile: "/home/openclaw/.config/phoenix/tokens/relay",
-              sealKeyFile: "/home/openclaw/.config/phoenix/keys/relay.seal.key",
-              defaultNamespace: "openclaw-relay"
+            "my-agent": {
+              tokenFile: "/home/openclaw/.config/phoenix/tokens/my-agent",
+              sealKeyFile: "/home/openclaw/.config/phoenix/keys/my-agent.seal.key",
+              defaultNamespace: "openclaw-my-agent"
             }
           }
         }

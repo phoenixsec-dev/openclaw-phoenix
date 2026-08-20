@@ -8,6 +8,8 @@ Start here:
 - [OpenClaw + Phoenix Guide](./openclaw-guide.md)
 - [OpenClaw + Phoenix Release Coordination Checklist](./release-coordination.md)
 
+Transport note: Phoenix is LAN-scoped by design (internet/WAN exposure is unsupported). Plaintext over loopback is the supported default; enable TLS (`https://` plus `PHOENIX_CA_CERT`) whenever gateway-to-Phoenix traffic crosses a wire — a LAN, including Docker bridge networks, is not a trust boundary. The plugin warns loudly on non-loopback plain `http://` and never refuses; see [Transport security](./openclaw-guide.md#transport-security).
+
 ### Plugin package path — runtime tools
 
 Use the plugin package when you want:

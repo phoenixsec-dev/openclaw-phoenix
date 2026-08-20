@@ -26,6 +26,18 @@ The plugin sends these OpenClaw metadata headers when the OpenClaw runtime conte
 
 These headers must never be treated as authentication or authoritative identity by Phoenix. They are not a substitute for Phoenix token, mTLS, session, ACL, attestation, or sealed-response policy checks.
 
+## Transport posture (coordinated across Phoenix packages)
+
+Phoenix is LAN-scoped by design: internet/WAN exposure is out of scope and unsupported. Loopback plaintext (`http://127.0.0.1:9090`) is the supported default; any Phoenix URL that crosses a wire — including Docker bridge networks — should be `https://` with the Phoenix CA certificate distributed to clients. A LAN is in scope but is not a trust boundary.
+
+All three Phoenix components hold the same deliberately coordinated posture: **warn loudly on non-loopback plaintext, never refuse**. This plugin logs the warning at gateway-startup preflight, includes it in `phoenix_status` `notes`, and reports it in `openclaw phoenix verify` `warnings`; the Hermes Phoenix plugin emits an equivalent warning on its side, and `phoenix-server` gained its own startup warning and a first-class `tls:` config block in Phoenix `v0.17.0`. This plugin's warning is client-side and is emitted against any server version, including older ones that stay silent themselves. The plugin does not hard-fail on plain HTTP because this package is published and hard-failing would break existing deployments with no migration path.
+
+Release coordination checks:
+
+- [ ] Deployments where gateway-to-Phoenix traffic crosses a wire use `https://` with `caCert`/`PHOENIX_CA_CERT` set, or the operator has explicitly accepted the logged cleartext warning for a trusted single-host bridge.
+- [ ] No deployment exposes Phoenix beyond the LAN (no public ingress, no WAN reachability); that is unsupported, not merely discouraged.
+- [ ] The target `phoenix-server` build emits its own non-loopback plaintext startup warning, so operators get the signal on both ends of the connection.
+
 ## Identity and sealed-response boundaries
 
 - The plugin selects Phoenix credential material from the OpenClaw runtime `ctx.agentId` mapping, not from tool arguments or raw HTTP headers.
@@ -36,15 +48,15 @@ These headers must never be treated as authentication or authoritative identity 
 
 ## Per-agent rollout inventory
 
-Status is unknown until an operator validates each item in the target environment. Do not print token values, private keys, plaintext secrets, or public keys in this checklist or Whiteboard notes. If a human intentionally records public-key fingerprints, record fingerprints only.
+Status is unknown until an operator validates each item in the target environment. Do not print token values, private keys, plaintext secrets, or public keys in this checklist or accompanying task-tracker notes. If a human intentionally records public-key fingerprints, record fingerprints only.
+
+The agent rows below are placeholders; replace them with your deployment's actual mapped `ctx.agentId` values.
 
 | Agent | Token file exists and mode `0600` | Seal key file exists and mode `0600` | Public seal key registered in Phoenix for matching identity | Phoenix ACL/attestation scopes checked | Live `phoenix_status` works | Live sealed `phoenix_resolve` returns `PHOENIX_SEALED:*` | `phoenix_resolve`/`phoenix_list` allowlist remains gated until validated |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `main` | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] |
-| `kit` | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] |
-| `phoenix` | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] |
-| `echo` | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] |
-| `relay` | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] |
+| `example-agent` | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] |
+| `my-agent` | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] |
 
 Validation notes:
 
@@ -58,7 +70,7 @@ Validation notes:
 Do not enable broad `phoenix_resolve` or `phoenix_list` access until all of the following are true:
 
 1. Phoenix server audit-only handling for the exact `X-OpenClaw-*` headers above is merged/verified in the target Phoenix deployment.
-2. Every mapped agent (`main`, `kit`, `phoenix`, `echo`, `relay`) has a unique scoped token file and, when sealed mode is enabled, a unique seal-key file with group/other permissions cleared (`0600` recommended).
+2. Every mapped agent (for example `main`, `example-agent`, `my-agent`) has a unique scoped token file and, when sealed mode is enabled, a unique seal-key file with group/other permissions cleared (`0600` recommended).
 3. Every mapped agent's derived public seal key is registered in Phoenix for the matching identity.
 4. Phoenix ACL and attestation scopes are checked for each mapped identity.
 5. `phoenix_status` succeeds for each mapped identity.

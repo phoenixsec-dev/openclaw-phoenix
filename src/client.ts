@@ -7,7 +7,7 @@ import { normalizeListPrefix, normalizePhoenixRef } from "./refs.ts";
 import { buildSealHeader } from "./seal.ts";
 import { readCredentialFile } from "./secure-file.ts";
 import { readPhoenixTokenFile } from "./token.ts";
-import type { PhoenixClientConfig } from "./config.ts";
+import { getPhoenixTransportWarning, type PhoenixClientConfig } from "./config.ts";
 import { PhoenixAccessDeniedError } from "./errors.ts";
 import type { PhoenixCallerContext } from "./tool-helpers.ts";
 
@@ -624,6 +624,10 @@ export class PhoenixClient {
 
   async status(options: { caller?: PhoenixCallerContext } = {}): Promise<PhoenixStatusResponse> {
     const notes: string[] = [];
+    const transportWarning = getPhoenixTransportWarning(this.config.server);
+    if (transportWarning) {
+      notes.push(transportWarning);
+    }
     await this.validateSealConfiguration();
     if (this.config.sealMode) {
       notes.push("Phoenix sealed mode is enabled and the configured seal key file loaded successfully.");

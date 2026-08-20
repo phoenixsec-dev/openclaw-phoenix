@@ -109,25 +109,15 @@ Then enable/configure the `phoenix-secrets` plugin in OpenClaw config with per-a
               sealKeyFile: "/home/openclaw/.config/phoenix/keys/main.seal.key",
               defaultNamespace: "openclaw-main"
             },
-            kit: {
-              tokenFile: "/home/openclaw/.config/phoenix/tokens/kit",
-              sealKeyFile: "/home/openclaw/.config/phoenix/keys/kit.seal.key",
-              defaultNamespace: "openclaw-kit"
+            "example-agent": {
+              tokenFile: "/home/openclaw/.config/phoenix/tokens/example-agent",
+              sealKeyFile: "/home/openclaw/.config/phoenix/keys/example-agent.seal.key",
+              defaultNamespace: "openclaw-example-agent"
             },
-            phoenix: {
-              tokenFile: "/home/openclaw/.config/phoenix/tokens/phoenix",
-              sealKeyFile: "/home/openclaw/.config/phoenix/keys/phoenix.seal.key",
-              defaultNamespace: "openclaw-phoenix"
-            },
-            echo: {
-              tokenFile: "/home/openclaw/.config/phoenix/tokens/echo",
-              sealKeyFile: "/home/openclaw/.config/phoenix/keys/echo.seal.key",
-              defaultNamespace: "openclaw-echo"
-            },
-            relay: {
-              tokenFile: "/home/openclaw/.config/phoenix/tokens/relay",
-              sealKeyFile: "/home/openclaw/.config/phoenix/keys/relay.seal.key",
-              defaultNamespace: "openclaw-relay"
+            "my-agent": {
+              tokenFile: "/home/openclaw/.config/phoenix/tokens/my-agent",
+              sealKeyFile: "/home/openclaw/.config/phoenix/keys/my-agent.seal.key",
+              defaultNamespace: "openclaw-my-agent"
             }
           }
         }
@@ -172,7 +162,7 @@ Config fields:
 
 - `server` — Phoenix base URL, inherited by per-agent mappings unless an agent overrides it
 - `sealMode` — when true, `phoenix_resolve` returns `PHOENIX_SEALED:` tokens; inherited by agents unless they override it
-- `agents` — mapping from trusted OpenClaw `ctx.agentId` values (`main`, `kit`, `phoenix`, `echo`, `relay`) to Phoenix identities
+- `agents` — mapping from trusted OpenClaw `ctx.agentId` values (for example `main`, `example-agent`, `my-agent`) to Phoenix identities
 - `agents.<id>.tokenFile` — required per-agent bearer token file; must be unique across mapped agents and locked down with no group/other permission bits (`chmod 600` recommended)
 - `agents.<id>.sealKeyFile` — required for that agent when effective `sealMode` is true; must be unique across mapped agents and locked down with no group/other permission bits (`chmod 600` recommended)
 - `agents.<id>.defaultNamespace` — default namespace used when that agent passes bare ids like `api-key`
@@ -199,12 +189,23 @@ When `sealMode` is true, the plugin must use a persistent seal key for the selec
 
 Operational checklist:
 1. Generate a separate seal key pair for each OpenClaw agent identity, writing each private key to a local file.
-2. Keep token files and private key files mounted/readable only by the OpenClaw gateway process; do not commit them. Use restrictive permissions such as `chmod 600 /path/to/echo.token /path/to/echo.seal.key`.
+2. Keep token files and private key files mounted/readable only by the OpenClaw gateway process; do not commit them. Use restrictive permissions such as `chmod 600 /path/to/example-agent.token /path/to/example-agent.seal.key`.
 3. Register each derived/printed public key with Phoenix for the matching agent or role-session identity before live requests.
 4. Use live tool calls from each agent identity to validate Phoenix-side public-key registration and policy. `openclaw phoenix verify` is a diagnostic shared-identity helper and does not prove every runtime agent identity is authorized.
 5. Keep `phoenix_resolve` and `phoenix_list` denied until scoped auth, per-agent identity mapping, and sealed behavior are validated.
 
 Production rollout policy: keep it conservative. Do not deploy this plugin change to a production gateway or enable broad Phoenix tools there until scoped per-agent credentials, registered public seal keys, and allowlists have been validated separately.
+
+## Transport security
+
+Phoenix is **LAN-scoped by design**. Internet/WAN exposure (public ingress, hostile networks) is out of scope and unsupported. Inside that envelope, pick the transport by where the traffic goes:
+
+- **Same machine (loopback)**: plain `http://127.0.0.1:9090` is the supported default. Loopback traffic never reaches a network interface, so TLS adds nothing there.
+- **Anything that crosses a wire** — another host, a Docker bridge network, a VM boundary: use `https://` and set `caCert` (or `PHOENIX_CA_CERT`) to the Phoenix CA certificate. A LAN is in scope but is **not** a trust boundary: containers on shared bridges, IoT devices, guest WiFi, and any compromised host can read plaintext traffic, and one sniffed bearer token yields everything that token's ACL permits.
+
+Enabling TLS does not require mTLS: point the URL at `https://`, distribute Phoenix's `ca.crt` once, and set `caCert`/`PHOENIX_CA_CERT`. The Phoenix server certificate carries IP SANs, so `https://<ip>:9090` validates without public DNS or a reverse proxy. mTLS (`clientCert`/`clientKey`) remains an optional, stronger machine-identity layer on top.
+
+When any configured server URL (top-level or per-agent override) is plain `http://` to a non-loopback address, the plugin emits a security warning stating that the bearer token and resolved secret values cross the network in cleartext, readable by anything on that segment. It appears in the gateway-startup preflight log, in `phoenix_status` structured `notes`, and in `openclaw phoenix verify` output (`warnings` in the result). The plugin warns and continues — it never refuses plain HTTP, because this package is published and hard-failing would break existing deployments. The same warn-never-refuse posture applies to `phoenix-server` and the Hermes Phoenix plugin.
 
 ## Authentication patterns
 
@@ -212,7 +213,7 @@ Production rollout policy: keep it conservative. Do not deploy this plugin chang
 
 Use this for simple local/dev setups and per-agent runtime identities.
 
-- for live tools, prefer `agents.<id>.tokenFile` pointing at an existing scoped token file for each mapped OpenClaw agent; use restrictive permissions such as `chmod 600 /path/to/echo.token`
+- for live tools, prefer `agents.<id>.tokenFile` pointing at an existing scoped token file for each mapped OpenClaw agent; use restrictive permissions such as `chmod 600 /path/to/example-agent.token`
 - top-level `tokenFile`/`PHOENIX_TOKEN_FILE` is diagnostic/dev only and does not provide per-agent isolation
 - if you inject `PHOENIX_TOKEN` directly, scope it narrowly and understand it becomes part of the gateway process environment
 - do **not** use a broad admin token as the normal gateway credential
@@ -258,12 +259,15 @@ Checks:
 - `/v1/health`
 - `/v1/status` when current credentials are allowed
 - TLS peer certificate details when HTTPS is used
+- transport posture: `notes` includes a security warning when the selected identity's server URL is plain `http://` to a non-loopback address (see [Transport security](#transport-security))
 
 Note: Phoenix's current REST API does not expose a server version field, so this plugin reports version as unavailable instead of guessing.
 
 ## Startup behavior
 
 The plugin registers one documented OpenClaw plugin service (`api.registerService`) for startup preflight. It does not use the internal `gateway:startup` hook. When `agents` is configured, startup checks each mapped agent identity with its selected token file and seal key, and detects duplicate token or seal-key material across mapped agents. Each identity is then probed against the authenticated read-only `GET /v1/policy/check` endpoint, so the preflight validates credential acceptance (not just reachability) and warns distinctly for "unreachable" versus "reachable but rejected the configured credentials". It does not verify ACL grants, server-side seal-key registration, or that any specific ref resolves.
+
+The preflight also checks transport posture: any configured server URL (top-level or per-agent override) that is plain `http://` to a non-loopback address is logged as a security warning naming the cleartext exposure, before the connectivity probes run.
 
 Startup preflight is warning-only. If Phoenix is unreachable, TLS/auth/seal-key configuration is broken, or duplicate per-agent token/seal-key material is detected, the plugin logs an actionable warning and the OpenClaw gateway continues running. Runtime tools separately fingerprint all mapped identity material on each call and fail closed with `PHOENIX_DUPLICATE_IDENTITY_MATERIAL` if token contents or derived seal public keys match, so duplicate material cannot be used after a warning. Use `openclaw phoenix verify` with a top-level diagnostic identity for CLI diagnostics; `phoenix_status` also fails closed on duplicate mapped identity material.
 
@@ -295,6 +299,7 @@ What it does:
 - calls Phoenix dry-run resolution via `/v1/resolve?dry_run=true`
 - sends the derived public seal key on dry-run requests when sealed mode is enabled
 - reports OK/FAIL per ref without returning plaintext secret values
+- prints a transport security warning (and includes it in the result's `warnings`) for every configured server URL — top-level or per-agent override — that is plain `http://` to a non-loopback address; warnings never fail verification
 
 `openclaw phoenix verify` runs outside agent tool context, so it cannot select `ctx.agentId`. If per-agent mappings are enabled without a top-level diagnostic identity, the command asks for one rather than pretending to verify per-agent trust. When top-level `sealMode` is enabled, that diagnostic identity must include its own top-level `sealKeyFile` (or `PHOENIX_SEAL_KEY`); per-agent seal keys are intentionally not selected by the CLI. Dry-run verification does not prove live sealed access is registered/authorized for every runtime agent; Phoenix-side public-key registration and policy still need live rollout checks from each mapped agent.
 
@@ -309,7 +314,8 @@ See `examples/openclaw-docker/` for copy-pasteable examples.
 
 Key points:
 - plugin path uses direct API calls from gateway to Phoenix
-- the mTLS Compose example overrides `PHOENIX_SERVER` to an `https://` URL because client CA/certificate/key material is only applied to HTTPS requests
+- the bearer Compose example defaults to `http://phoenix:9090`, which is plaintext across the Compose bridge network (a non-loopback wire); the plugin logs a transport security warning for it. That is acceptable only for a single-host lab stack where everything on that bridge is trusted — see [Transport security](#transport-security)
+- the mTLS Compose example overrides `PHOENIX_SERVER` to an `https://` URL because client CA/certificate/key material is only applied to HTTPS requests; it is the pattern to use whenever gateway-to-Phoenix traffic crosses a wire
 - mount only the minimum token/cert material into the gateway
 - prefer per-agent token files over env vars for live runtime tools
 - host token, seal-key, and mTLS client-key files must have no group/other permission bits before mounting (`chmod 600` recommended); `:ro` bind mounts alone do not satisfy the plugin's checks
@@ -361,6 +367,8 @@ Migration note:
 ## Anti-patterns
 
 Avoid:
+- pointing `server` at a non-loopback `http://` URL and leaving the transport warning unaddressed — that is the bearer token and secret values in cleartext on the wire
+- exposing Phoenix to the internet/WAN in any form; that is outside Phoenix's supported deployment envelope entirely
 - using one shared admin token for every OpenClaw environment
 - exposing `phoenix_resolve` or `phoenix_list` to multiple agents with only single-identity diagnostic config
 - letting tool parameters such as `agentId` or `identity` choose Phoenix credentials

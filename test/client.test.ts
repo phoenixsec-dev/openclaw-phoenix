@@ -427,6 +427,45 @@ test("PhoenixClient status falls back cleanly when /v1/status is forbidden", asy
     assert.equal(status.adminStatus, undefined);
     assert.equal(status.adminStatusError?.type, "access_denied");
     assert.ok(status.notes.some((note) => note.includes("does not currently expose the server version")));
+    assert.ok(
+      !status.notes.some((note) => note.includes("cleartext")),
+      "loopback plain http must not produce a transport warning note",
+    );
+  });
+});
+
+test("PhoenixClient status notes warn about non-loopback plain http transport", async () => {
+  await withServer(async (req, res) => {
+    res.setHeader("content-type", "application/json");
+    if (req.url === "/v1/health") {
+      res.end(JSON.stringify({ status: "ok" }));
+      return;
+    }
+    if (req.url === "/v1/status") {
+      res.end(JSON.stringify({ uptime: 1 }));
+      return;
+    }
+    res.statusCode = 404;
+    res.end(JSON.stringify({ error: "not found" }));
+  }, async (baseUrl) => {
+    // 0.0.0.0 is not a loopback address (the plugin classifies it as
+    // non-loopback and warns), but connecting to it reaches the local test
+    // server on POSIX hosts, so this drives the warning through the full
+    // status path.
+    const server = `http://0.0.0.0:${new URL(baseUrl).port}`;
+    const client = new PhoenixClient({
+      server,
+      token: "token",
+      sealMode: false,
+    });
+
+    const status = await client.status();
+    assert.equal(status.ok, true);
+    const transportNote = status.notes.find((note) => note.includes("cleartext"));
+    assert.ok(transportNote, "expected a transport warning note for non-loopback plain http");
+    assert.ok(transportNote.includes(server));
+    assert.match(transportNote, /bearer token/);
+    assert.match(transportNote, /https:\/\//);
   });
 });
 

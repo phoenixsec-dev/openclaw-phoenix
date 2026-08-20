@@ -1,3 +1,8 @@
+# Bearer-token variant. PHOENIX_SERVER comes from .env and defaults to
+# http://phoenix:9090 — plaintext across the Compose bridge (a non-loopback
+# wire); the plugin logs a transport security warning for it. Acceptable only
+# for a trusted single-host lab stack. When traffic crosses a real wire, use
+# docker-compose.mtls.yml (or https:// + PHOENIX_CA_CERT). See README.md.
 services:
   phoenix:
     image: ghcr.io/phoenixsec-dev/phoenix:latest
@@ -20,13 +25,9 @@ services:
       - ./openclaw.jsonc:/root/.openclaw/openclaw.jsonc:ro
       # Host token/seal-key files must be chmod 600-style before mounting; :ro is not enough.
       - ${PHOENIX_TOKEN_FILE_MAIN_HOST}:${PHOENIX_TOKEN_FILE_MAIN}:ro
-      - ${PHOENIX_TOKEN_FILE_KIT_HOST}:${PHOENIX_TOKEN_FILE_KIT}:ro
-      - ${PHOENIX_TOKEN_FILE_PHOENIX_HOST}:${PHOENIX_TOKEN_FILE_PHOENIX}:ro
-      - ${PHOENIX_TOKEN_FILE_ECHO_HOST}:${PHOENIX_TOKEN_FILE_ECHO}:ro
-      - ${PHOENIX_TOKEN_FILE_RELAY_HOST}:${PHOENIX_TOKEN_FILE_RELAY}:ro
+      - ${PHOENIX_TOKEN_FILE_EXAMPLE_AGENT_HOST}:${PHOENIX_TOKEN_FILE_EXAMPLE_AGENT}:ro
+      - ${PHOENIX_TOKEN_FILE_MY_AGENT_HOST}:${PHOENIX_TOKEN_FILE_MY_AGENT}:ro
       - ${PHOENIX_SEAL_KEY_MAIN_HOST}:${PHOENIX_SEAL_KEY_MAIN}:ro
-      - ${PHOENIX_SEAL_KEY_KIT_HOST}:${PHOENIX_SEAL_KEY_KIT}:ro
-      - ${PHOENIX_SEAL_KEY_PHOENIX_HOST}:${PHOENIX_SEAL_KEY_PHOENIX}:ro
-      - ${PHOENIX_SEAL_KEY_ECHO_HOST}:${PHOENIX_SEAL_KEY_ECHO}:ro
-      - ${PHOENIX_SEAL_KEY_RELAY_HOST}:${PHOENIX_SEAL_KEY_RELAY}:ro
+      - ${PHOENIX_SEAL_KEY_EXAMPLE_AGENT_HOST}:${PHOENIX_SEAL_KEY_EXAMPLE_AGENT}:ro
+      - ${PHOENIX_SEAL_KEY_MY_AGENT_HOST}:${PHOENIX_SEAL_KEY_MY_AGENT}:ro
     restart: unless-stopped
