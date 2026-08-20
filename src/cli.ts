@@ -1,4 +1,4 @@
-import type { PhoenixPluginConfig } from "./config.ts";
+import { collectPhoenixTransportWarnings, type PhoenixPluginConfig } from "./config.ts";
 import { PhoenixClient, formatPhoenixError } from "./client.ts";
 import { hasPhoenixAgentMappings } from "./identity.ts";
 import { extractPhoenixRefs } from "./refs.ts";
@@ -9,6 +9,12 @@ export type PhoenixVerifyResult = {
   failCount: number;
   values: Record<string, string>;
   errors: Record<string, string>;
+  /**
+   * Non-fatal transport/security warnings (currently: non-loopback plain
+   * http:// server URLs, including per-agent overrides). Warnings never fail
+   * verification; refs decide the exit status.
+   */
+  warnings: string[];
 };
 
 type PhoenixCliCommand = {
@@ -39,6 +45,11 @@ export async function verifyPhoenixRefsInConfig(
     }
   }
 
+  // Warn (never fail) on non-loopback plain http:// so an operator running
+  // verify sees the cleartext exposure, covering per-agent server overrides
+  // the CLI's diagnostic identity does not itself connect to.
+  const warnings = collectPhoenixTransportWarnings(pluginConfig);
+
   const client = new PhoenixClient(pluginConfig);
   await client.validateSealConfiguration();
 
@@ -49,6 +60,7 @@ export async function verifyPhoenixRefsInConfig(
       failCount: 0,
       values: {},
       errors: {},
+      warnings,
     };
   }
 
@@ -62,6 +74,7 @@ export async function verifyPhoenixRefsInConfig(
     failCount,
     values: result.values,
     errors: result.errors,
+    warnings,
   };
 }
 
@@ -84,6 +97,9 @@ export function registerPhoenixCli(params: {
     .description("Dry-run validate all phoenix:// refs currently present in the gateway config")
     .action(async () => {
       const result = await verifyPhoenixRefsInConfig(params.openClawConfig, params.pluginConfig);
+      for (const warning of result.warnings) {
+        params.logger.warn?.(warning);
+      }
       if (result.refs.length === 0) {
         params.logger.info?.("No phoenix:// refs found in the active OpenClaw config.");
         return;

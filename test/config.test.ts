@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { phoenixPluginConfigSchema, resolvePhoenixPluginConfig } from "../src/config.ts";
+import {
+  collectPhoenixTransportWarnings,
+  getPhoenixTransportWarning,
+  phoenixPluginConfigSchema,
+  resolvePhoenixPluginConfig,
+} from "../src/config.ts";
 
 test("resolvePhoenixPluginConfig reads env fallbacks and resolves paths", () => {
   const config = resolvePhoenixPluginConfig(
@@ -399,6 +404,88 @@ test("resolvePhoenixPluginConfig rejects malformed configs", () => {
       `expected config case "${testCase.name}" to be rejected`,
     );
   }
+});
+
+test("getPhoenixTransportWarning warns on non-loopback plain http", () => {
+  for (const server of [
+    "http://192.0.2.10:9090",
+    "http://phoenix:9090",
+    "http://phoenix.internal:9090",
+    "http://[2001:db8::10]:9090",
+    "http://0.0.0.0:9090",
+  ]) {
+    const warning = getPhoenixTransportWarning(server);
+    assert.ok(warning, `expected a transport warning for ${server}`);
+    assert.ok(warning.includes(server), "warning must name the offending server URL");
+    assert.match(warning, /bearer token/);
+    assert.match(warning, /secret values/);
+    assert.match(warning, /cleartext/);
+    assert.match(warning, /network segment/);
+    assert.match(warning, /https:\/\//, "warning must point at the fix");
+  }
+});
+
+test("getPhoenixTransportWarning stays silent on loopback http and on https", () => {
+  for (const server of [
+    "http://127.0.0.1:9090",
+    "http://127.8.9.10:9090",
+    "http://localhost:9090",
+    "http://dev.localhost:9090",
+    "http://[::1]:9090",
+    "http://[::ffff:127.0.0.1]:9090",
+    "https://phoenix.internal:9090",
+    "https://192.0.2.10:9090",
+  ]) {
+    assert.equal(
+      getPhoenixTransportWarning(server),
+      undefined,
+      `expected no transport warning for ${server}`,
+    );
+  }
+});
+
+test("collectPhoenixTransportWarnings covers per-agent server overrides and dedupes", () => {
+  const config = resolvePhoenixPluginConfig(
+    {
+      server: "http://127.0.0.1:9090",
+      sealMode: false,
+      agents: {
+        main: {
+          tokenFile: "./main.token",
+          defaultNamespace: "openclaw-main",
+        },
+        kit: {
+          server: "http://192.0.2.10:9090",
+          tokenFile: "./kit.token",
+          defaultNamespace: "openclaw-kit",
+        },
+        echo: {
+          server: "http://192.0.2.10:9090",
+          tokenFile: "./echo.token",
+          defaultNamespace: "openclaw-echo",
+        },
+      },
+    },
+    { env: {}, resolvePath: (input) => `/resolved/${input}` },
+  );
+
+  const warnings = collectPhoenixTransportWarnings(config);
+  assert.equal(warnings.length, 1, "identical per-agent servers must produce one deduped warning");
+  assert.ok(warnings[0].includes("http://192.0.2.10:9090"));
+});
+
+test("collectPhoenixTransportWarnings is empty for loopback http and non-loopback https", () => {
+  const loopback = resolvePhoenixPluginConfig(
+    { server: "http://127.0.0.1:9090", token: "t", sealMode: false },
+    { env: {} },
+  );
+  assert.deepEqual(collectPhoenixTransportWarnings(loopback), []);
+
+  const https = resolvePhoenixPluginConfig(
+    { server: "https://phoenix.internal:9090", token: "t", sealMode: false },
+    { env: {} },
+  );
+  assert.deepEqual(collectPhoenixTransportWarnings(https), []);
 });
 
 test("phoenixPluginConfigSchema.validate reports errors without throwing", () => {

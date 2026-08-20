@@ -16,7 +16,7 @@
   "uiHints": {
     "server": {
       "label": "Phoenix Server URL",
-      "help": "Phoenix base URL (fallback: PHOENIX_SERVER). Shared by per-agent identities unless an agent overrides it.",
+      "help": "Phoenix base URL (fallback: PHOENIX_SERVER). Shared by per-agent identities unless an agent overrides it. Use https:// whenever the address is not loopback; non-loopback http:// sends the bearer token and secret values in cleartext and triggers a security warning.",
       "placeholder": "https://phoenix:9090"
     },
     "token": {

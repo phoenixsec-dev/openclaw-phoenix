@@ -8,7 +8,7 @@ import {
   runPhoenixStartupCheck,
   runPhoenixStartupPreflightWarningOnly,
 } from "../src/startup.ts";
-import { verifyPhoenixRefsInConfig } from "../src/cli.ts";
+import { registerPhoenixCli, verifyPhoenixRefsInConfig } from "../src/cli.ts";
 import {
   TEST_SEAL_PRIVATE_KEY,
   TEST_SEAL_PRIVATE_KEY_B,
@@ -921,5 +921,115 @@ test("runPhoenixStartupCheck runs an authenticated probe for every mapped agent"
       assert.deepEqual(preflight, { ok: true });
       assert.deepEqual(warnings, []);
     });
+  });
+});
+
+test("verifyPhoenixRefsInConfig surfaces transport warnings without failing", async () => {
+  // No refs in the config snapshot, so this exercises the warning path with
+  // no network traffic at all: the warning comes from configuration alone.
+  const nonLoopback = await verifyPhoenixRefsInConfig(
+    { note: "no refs here" },
+    {
+      server: "http://192.0.2.10:9090",
+      token: "token",
+      sealMode: false,
+    },
+  );
+  assert.equal(nonLoopback.refs.length, 0);
+  assert.equal(nonLoopback.okCount, 0);
+  assert.equal(nonLoopback.failCount, 0);
+  assert.equal(nonLoopback.warnings.length, 1);
+  assert.match(nonLoopback.warnings[0], /cleartext/);
+  assert.ok(nonLoopback.warnings[0].includes("http://192.0.2.10:9090"));
+
+  const loopback = await verifyPhoenixRefsInConfig(
+    { note: "no refs here" },
+    {
+      server: "http://127.0.0.1:9090",
+      token: "token",
+      sealMode: false,
+    },
+  );
+  assert.deepEqual(loopback.warnings, []);
+
+  const https = await verifyPhoenixRefsInConfig(
+    { note: "no refs here" },
+    {
+      server: "https://phoenix.internal:9090",
+      token: "token",
+      sealMode: false,
+    },
+  );
+  assert.deepEqual(https.warnings, []);
+});
+
+test("openclaw phoenix verify CLI logs transport warnings through the logger", async () => {
+  const actions = new Map<string, () => Promise<void> | void>();
+  const makeCommand = (name: string) => {
+    const command = {
+      command: (subName: string) => makeCommand(`${name} ${subName}`),
+      description: () => command,
+      action: (handler: () => Promise<void> | void) => {
+        actions.set(name, handler);
+        return command;
+      },
+    };
+    return command;
+  };
+
+  const infoMessages: string[] = [];
+  const warnMessages: string[] = [];
+  registerPhoenixCli({
+    program: { command: (name: string) => makeCommand(name) },
+    openClawConfig: { note: "no refs here" },
+    pluginConfig: {
+      server: "http://192.0.2.10:9090",
+      token: "token",
+      sealMode: false,
+    },
+    logger: {
+      info: (message) => infoMessages.push(message),
+      warn: (message) => warnMessages.push(message),
+    },
+  });
+
+  const verifyAction = actions.get("phoenix verify");
+  assert.ok(verifyAction, "phoenix verify CLI action must be registered");
+  await verifyAction();
+
+  assert.equal(warnMessages.length, 1);
+  assert.match(warnMessages[0], /cleartext/);
+  assert.ok(warnMessages[0].includes("http://192.0.2.10:9090"));
+  assert.ok(infoMessages.some((message) => message.includes("No phoenix:// refs found")));
+});
+
+test("startup preflight logs a transport warning for non-loopback plain http and still passes", async () => {
+  await withServer(async (req, res) => {
+    res.setHeader("content-type", "application/json");
+    if (req.url?.startsWith("/v1/policy/check")) {
+      res.end(JSON.stringify({ allowed: false }));
+      return;
+    }
+    res.statusCode = 404;
+    res.end(JSON.stringify({ error: "not found" }));
+  }, async (baseUrl) => {
+    // 0.0.0.0 is classified as non-loopback (and warned about), but
+    // connecting to it reaches the local test server on POSIX hosts, so the
+    // preflight itself succeeds while the transport warning fires.
+    const server = `http://0.0.0.0:${new URL(baseUrl).port}`;
+    const warnings: string[] = [];
+    const result = await runPhoenixStartupPreflightWarningOnly(
+      {
+        server,
+        token: "token",
+        sealMode: false,
+      },
+      { warn: (message) => warnings.push(message) },
+    );
+
+    assert.deepEqual(result, { ok: true });
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /cleartext/);
+    assert.ok(warnings[0].includes(server));
   });
 });

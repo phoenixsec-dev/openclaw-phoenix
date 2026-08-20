@@ -1,4 +1,8 @@
-import type { PhoenixPluginConfig, PhoenixClientConfig } from "./config.ts";
+import {
+  collectPhoenixTransportWarnings,
+  type PhoenixPluginConfig,
+  type PhoenixClientConfig,
+} from "./config.ts";
 import { PhoenixApiError, PhoenixClient, formatPhoenixError } from "./client.ts";
 import { getPhoenixAgentClientConfigs } from "./identity.ts";
 import {
@@ -89,6 +93,14 @@ export async function runPhoenixStartupPreflightWarningOnly(
   config: PhoenixPluginConfig,
   logger: PhoenixStartupPreflightLogger = {},
 ): Promise<PhoenixStartupPreflightResult> {
+  // Transport posture check: warn loudly (never refuse) when any configured
+  // Phoenix server URL -- top-level or per-agent override -- is plain http://
+  // to a non-loopback address, since that sends bearer tokens and secret
+  // values across the wire in cleartext. phoenix_status and `openclaw
+  // phoenix verify` surface the same warning in their structured output.
+  for (const transportWarning of collectPhoenixTransportWarnings(config)) {
+    logger.warn?.(transportWarning);
+  }
   try {
     await runPhoenixStartupCheck(config);
     return { ok: true };

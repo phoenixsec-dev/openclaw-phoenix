@@ -87,7 +87,7 @@ export const phoenixPluginConfigJsonSchema = {
 export const phoenixPluginConfigUiHints = {
   server: {
     label: "Phoenix Server URL",
-    help: "Phoenix base URL (fallback: PHOENIX_SERVER). Shared by per-agent identities unless an agent overrides it.",
+    help: "Phoenix base URL (fallback: PHOENIX_SERVER). Shared by per-agent identities unless an agent overrides it. Use https:// whenever the address is not loopback; non-loopback http:// sends the bearer token and secret values in cleartext and triggers a security warning.",
     placeholder: "https://phoenix:9090",
   },
   token: {
@@ -167,6 +167,78 @@ function normalizePhoenixServer(server: string, label: string): string {
     throw new Error(`${label} must use http:// or https://: ${server}`);
   }
   return parsedUrl.toString().replace(/\/$/, "");
+}
+
+// --- Transport posture ----------------------------------------------------
+//
+// Phoenix is LAN-scoped by design: internet/WAN exposure is out of scope and
+// unsupported. Plaintext HTTP over loopback is the supported default because
+// loopback traffic never reaches a network interface. A LAN, however, is not
+// a trust boundary (containers on shared bridges, IoT, guest WiFi, any
+// compromised host), so the plugin warns loudly whenever a configured server
+// URL would send the bearer token across a wire in cleartext. It warns only
+// and never refuses: this package is published, and hard-failing would break
+// existing deployments with no migration path. phoenix-server and the Hermes
+// plugin apply the same warn-never-refuse posture.
+
+function isLoopbackHostname(rawHostname: string): boolean {
+  let hostname = rawHostname.toLowerCase();
+  if (hostname.startsWith("[") && hostname.endsWith("]")) {
+    hostname = hostname.slice(1, -1);
+  }
+  if (hostname === "localhost" || hostname.endsWith(".localhost")) {
+    return true;
+  }
+  if (hostname === "::1") {
+    return true;
+  }
+  if (hostname.startsWith("::ffff:")) {
+    hostname = hostname.slice("::ffff:".length);
+  }
+  const ipv4 = /^(\d{1,3})\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.exec(hostname);
+  if (ipv4) {
+    return Number(ipv4[1]) === 127;
+  }
+  // IPv4-mapped IPv6 loopback after WHATWG URL normalization to hex groups
+  // (http://[::ffff:127.0.0.1] parses to hostname "[::ffff:7f00:1]").
+  return /^7f[0-9a-f]{2}:[0-9a-f]{1,4}$/.test(hostname);
+}
+
+export function getPhoenixTransportWarning(server: string): string | undefined {
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(server);
+  } catch {
+    return undefined;
+  }
+  if (parsedUrl.protocol !== "http:" || isLoopbackHostname(parsedUrl.hostname)) {
+    return undefined;
+  }
+  return (
+    `SECURITY WARNING: Phoenix server ${server} uses plain http:// to a non-loopback address. ` +
+    "The Phoenix bearer token and resolved secret values cross the network in cleartext, readable by " +
+    "anything on that network segment (containers on shared bridges, other LAN hosts, guest WiFi), and " +
+    "one captured token yields everything its ACL permits. Phoenix is LAN-scoped by design and a LAN is " +
+    "not a trust boundary; WAN/internet exposure is unsupported. Fix: enable TLS on phoenix-server, change " +
+    "this URL to https://, and point caCert (or PHOENIX_CA_CERT) at the Phoenix CA certificate -- or keep " +
+    "Phoenix on loopback (e.g. http://127.0.0.1:9090). The plugin continues with this warning; it does not " +
+    "refuse plaintext."
+  );
+}
+
+export function collectPhoenixTransportWarnings(config: PhoenixPluginConfig): string[] {
+  const servers = new Set<string>([config.server]);
+  for (const identity of Object.values(config.agents ?? {})) {
+    servers.add(identity.server ?? config.server);
+  }
+  const warnings: string[] = [];
+  for (const server of servers) {
+    const warning = getPhoenixTransportWarning(server);
+    if (warning) {
+      warnings.push(warning);
+    }
+  }
+  return warnings;
 }
 
 function validateDefaultNamespace(defaultNamespace: string, label: string): void {
