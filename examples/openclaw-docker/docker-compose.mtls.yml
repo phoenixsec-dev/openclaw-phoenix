@@ -1,3 +1,8 @@
+# mTLS variant. This is the enable-TLS-when-crossing-a-wire pattern: gateway
+# traffic to Phoenix is encrypted (https:// + CA cert), with client
+# certificates layered on top for machine identity. Prefer this whenever
+# gateway-to-Phoenix traffic leaves loopback and the bridge is not a trusted
+# single-host lab network. Phoenix is LAN-scoped; WAN exposure is unsupported.
 services:
   phoenix:
     image: ghcr.io/phoenixsec-dev/phoenix:latest

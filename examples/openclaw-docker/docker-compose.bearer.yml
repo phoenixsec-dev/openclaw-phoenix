@@ -1,3 +1,8 @@
+# Bearer-token variant. PHOENIX_SERVER comes from .env and defaults to
+# http://phoenix:9090 — plaintext across the Compose bridge (a non-loopback
+# wire); the plugin logs a transport security warning for it. Acceptable only
+# for a trusted single-host lab stack. When traffic crosses a real wire, use
+# docker-compose.mtls.yml (or https:// + PHOENIX_CA_CERT). See README.md.
 services:
   phoenix:
     image: ghcr.io/phoenixsec-dev/phoenix:latest

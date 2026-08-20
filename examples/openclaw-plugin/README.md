@@ -25,6 +25,10 @@ openclaw plugins install -l ./path/to/openclaw-phoenix
 - `openclaw.jsonc` — plugin enablement and per-agent identity configuration
 - `.env.example` — environment variables to provide to the gateway process
 
+## Transport
+
+`.env.example` uses `https://phoenix:9090` because that address is not loopback: enabling TLS (and setting `caCert`/`PHOENIX_CA_CERT`) is the rule whenever gateway-to-Phoenix traffic crosses a wire. For a single-machine setup, plaintext loopback (`http://127.0.0.1:9090`) is the supported default. The plugin logs a security warning — it warns, it never refuses — when a configured server URL is plain `http://` to a non-loopback address. Phoenix is LAN-scoped by design; WAN exposure is unsupported.
+
 ## Per-agent identity and sealed keys
 
 This example enables `sealMode` and configures `agents.<id>.tokenFile` plus `agents.<id>.sealKeyFile` for each trusted OpenClaw agent id. Generate/register a separate Phoenix token and seal key for every mapped agent, keep private files local, and lock both token files and seal key files down so group/other bits are clear (for example, `chmod 600 /path/to/echo.token /path/to/echo.seal.key`). Register each derived public seal key in Phoenix before enabling sealed `phoenix_resolve`/`phoenix_list` access.

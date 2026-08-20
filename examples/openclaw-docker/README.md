@@ -4,6 +4,13 @@ This folder shows two patterns:
 - bearer token auth
 - mTLS auth
 
+## Transport model
+
+Phoenix is LAN-scoped by design; internet/WAN exposure is out of scope and unsupported. Plaintext over loopback is the supported default, but the Compose bridge network between these containers is a non-loopback wire, and a LAN (including container bridges) is not a trust boundary:
+
+- `docker-compose.bearer.yml` with the default `.env` uses `PHOENIX_SERVER=http://phoenix:9090`: the bearer token and resolved secret values cross the bridge in cleartext, readable by anything attached to it. That is acceptable only for a single-host lab stack where every container on the bridge is trusted. The plugin logs a transport security warning for this configuration (startup preflight, `phoenix_status` notes, and `openclaw phoenix verify`); it warns and continues, it does not refuse.
+- `docker-compose.mtls.yml` is the enable-TLS-when-crossing-a-wire variant: `https://` with the Phoenix CA certificate, plus client certificates for machine identity.
+
 ## Usage
 
 1. Copy `.env.example` to `.env`

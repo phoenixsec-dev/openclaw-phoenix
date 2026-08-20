@@ -26,6 +26,18 @@ The plugin sends these OpenClaw metadata headers when the OpenClaw runtime conte
 
 These headers must never be treated as authentication or authoritative identity by Phoenix. They are not a substitute for Phoenix token, mTLS, session, ACL, attestation, or sealed-response policy checks.
 
+## Transport posture (coordinated across Phoenix packages)
+
+Phoenix is LAN-scoped by design: internet/WAN exposure is out of scope and unsupported. Loopback plaintext (`http://127.0.0.1:9090`) is the supported default; any Phoenix URL that crosses a wire — including Docker bridge networks — should be `https://` with the Phoenix CA certificate distributed to clients. A LAN is in scope but is not a trust boundary.
+
+All three Phoenix components hold the same deliberately coordinated posture: **warn loudly on non-loopback plaintext, never refuse**. This plugin logs the warning at gateway-startup preflight, includes it in `phoenix_status` `notes`, and reports it in `openclaw phoenix verify` `warnings`; `phoenix-server` and the Hermes Phoenix plugin emit equivalent warnings on their side. The plugin does not hard-fail on plain HTTP because this package is published and hard-failing would break existing deployments with no migration path.
+
+Release coordination checks:
+
+- [ ] Deployments where gateway-to-Phoenix traffic crosses a wire use `https://` with `caCert`/`PHOENIX_CA_CERT` set, or the operator has explicitly accepted the logged cleartext warning for a trusted single-host bridge.
+- [ ] No deployment exposes Phoenix beyond the LAN (no public ingress, no WAN reachability); that is unsupported, not merely discouraged.
+- [ ] The target `phoenix-server` build emits its own non-loopback plaintext startup warning, so operators get the signal on both ends of the connection.
+
 ## Identity and sealed-response boundaries
 
 - The plugin selects Phoenix credential material from the OpenClaw runtime `ctx.agentId` mapping, not from tool arguments or raw HTTP headers.
