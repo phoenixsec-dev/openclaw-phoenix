@@ -68,7 +68,7 @@ if (!availability.ok) {
 
     // Seed synthetic secrets and two agents: one with read access to the
     // openclaw-int namespaces, one scoped to an unrelated namespace.
-    server.cliOk(["set", "openclaw-int/api-key", "-v", "synthetic-value-1"]);
+    server.cliOk(["set", "openclaw-int/api-key", "-v", "synthetic-value-1", "-d", "Synthetic API key"]);
     server.cliOk(["set", "openclaw-int/db-pass", "-v", "synthetic-value-2"]);
     server.cliOk(["set", "openclaw-int/verify-only", "-v", "synthetic-verify-value"]);
     server.cliOk(["set", "openclaw-sealedonly/key", "-v", "synthetic-sealed-value"]);
@@ -173,18 +173,23 @@ if (!availability.ok) {
       st.diagnostic(`denied-ACL per-ref error: ${errors["phoenix://openclaw-int/api-key"]}`);
     });
 
-    await t.test("phoenix_list lists seeded paths and returns empty for unauthorized prefixes", async (st) => {
+    await t.test("phoenix_list lists seeded secrets and returns empty for unauthorized prefixes", async (st) => {
       // No explicit prefix: the tool lists under the configured defaultNamespace.
       const tool = createPhoenixListTool(mainConfig, { agentId: "main" });
       const result = toolDetails(await tool.execute("call-list-ok", {}));
       assert.equal(result.ok, true);
       assert.equal(result.prefix, "openclaw-int/");
-      assert.deepEqual(result.paths, [
-        "openclaw-int/api-key",
-        "openclaw-int/db-pass",
-        "openclaw-int/verify-only",
+      // A server with /v1/metadata returns descriptions; an older one falls
+      // back to bare paths, says so in `note`, and leaves descriptions empty.
+      const hasDescriptions = result.note === undefined;
+      assert.deepEqual(result.secrets, [
+        { path: "openclaw-int/api-key", description: hasDescriptions ? "Synthetic API key" : "" },
+        { path: "openclaw-int/db-pass", description: "" },
+        { path: "openclaw-int/verify-only", description: "" },
       ]);
       assert.equal(result.count, 3);
+      assert.ok(!JSON.stringify(result).includes("synthetic-value"), "list must never return values");
+      st.diagnostic(hasDescriptions ? "server returned descriptions" : "old server: bare-path fallback");
 
       // Observed Phoenix behavior: listing a prefix the agent cannot read is
       // not an error; the server answers HTTP 200 with "paths": null, so the
@@ -193,8 +198,8 @@ if (!availability.ok) {
       const denied = toolDetails(await outsiderTool.execute("call-list-denied", {}));
       assert.equal(denied.ok, true);
       assert.equal(denied.count, 0);
-      assert.deepEqual(denied.paths, []);
-      st.diagnostic("unauthorized phoenix_list is an empty listing (HTTP 200, paths:null), not an error");
+      assert.deepEqual(denied.secrets, []);
+      st.diagnostic("unauthorized phoenix_list is an empty listing (HTTP 200), not an error");
     });
 
     await t.test("phoenix_status reports health and bearer auth mode", async () => {

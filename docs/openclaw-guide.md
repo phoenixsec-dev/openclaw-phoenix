@@ -250,7 +250,11 @@ Behavior:
 
 ### `phoenix_list`
 
-Lists visible paths only, not secret values.
+Lists one folder: each visible secret's `path` and `description` (empty when none is set). Never returns secret values.
+
+- `prefix` takes the same folder forms as the Phoenix CLI: `services/browser`, `services/browser/` and `services/browser/*` all mean the folder `services/browser/`, as do their `phoenix://` forms. `phoenix://ns` lists a whole namespace. Any other wildcard (`services/br*`, `a/*/b`, `?`) is refused before any request, with a message saying what works.
+- A single bare segment (`svc`, `svc/`, `svc/*`) lives under the agent's `defaultNamespace` when one is set. Use `phoenix://svc` to name a top-level namespace instead.
+- Uses `GET /v1/metadata/<folder>`, which needs only `list` permission. A Phoenix server without that route answers a plain-text 404; the tool then falls back to `GET /v1/secrets/<folder>`, returns paths with empty descriptions, and adds a `note` saying the server is too old for descriptions.
 
 ### `phoenix_status`
 
