@@ -62,6 +62,27 @@ test("normalizeListPrefix handles empty, bare, and phoenix:// inputs", () => {
   assert.equal(normalizeListPrefix("phoenix://openclaw/svc"), "openclaw/svc/");
 });
 
+test("normalizeListPrefix: folder, folder/ and folder/* are the same folder", () => {
+  for (const form of ["services/browser", "services/browser/", "services/browser/*"]) {
+    assert.equal(normalizeListPrefix(form), "services/browser/");
+    assert.equal(normalizeListPrefix(`phoenix://${form}`), "services/browser/");
+  }
+  for (const form of ["svc", "svc/", "svc/*"]) {
+    assert.equal(normalizeListPrefix(form, "openclaw"), "openclaw/svc/");
+  }
+  assert.equal(normalizeListPrefix("phoenix://services"), "services/");
+  assert.equal(normalizeListPrefix("*"), "");
+});
+
+test("normalizeListPrefix refuses any other wildcard with the CLI's hint", () => {
+  for (const bad of ["services/br*", "services/*/key", "services/browser/**", "phoenix://services/br*", "svc?"]) {
+    assert.throws(
+      () => normalizeListPrefix(bad),
+      /list takes a folder \(services\/browser, services\/browser\/ or services\/browser\/\*\); other wildcards are not supported/,
+    );
+  }
+});
+
 test("normalizeListPrefix rejects traversal-capable default namespaces", () => {
   assert.throws(() => normalizeListPrefix(undefined, "../status"), /single namespace segment/);
   assert.throws(() => normalizeListPrefix("key", "x/../status"), /single namespace segment/);
@@ -74,7 +95,7 @@ test("normalizeListPrefix rejects traversal and URL metacharacters", () => {
   assert.throws(() => normalizeListPrefix("..", "openclaw"), /invalid list prefix/);
   assert.throws(() => normalizeListPrefix("svc/../other"), /invalid list prefix/);
   assert.throws(() => normalizeListPrefix("svc//key"), /invalid list prefix/);
-  assert.throws(() => normalizeListPrefix("x?dry_run=true"), /invalid list prefix/);
+  assert.throws(() => normalizeListPrefix("x?dry_run=true"), /list takes a folder/);
   assert.throws(() => normalizeListPrefix("x#fragment"), /invalid list prefix/);
   assert.throws(() => normalizeListPrefix("a b"), /invalid list prefix/);
   assert.throws(() => normalizeListPrefix("a\\b"), /invalid list prefix/);

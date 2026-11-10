@@ -67,32 +67,59 @@ export function refToSecretPath(refOrPath: string, defaultNamespace?: string): s
   return `${match[1]}/${match[2]}`;
 }
 
+// Message for a list prefix that uses a wildcard other than a trailing "*".
+// Same wording as the Phoenix CLI and MCP phoenix_list.
+function listWildcardError(value: string): Error {
+  return new Error(
+    `"${value}": list takes a folder (services/browser, services/browser/ or services/browser/*); other wildcards are not supported`,
+  );
+}
+
+// Turns one of the three folder forms ("a/b", "a/b/", "a/b/*") into the bare
+// folder "a/b" ("" for the root). Any other wildcard is an error. Mirrors
+// listFolder in the Phoenix CLI.
+function bareListFolder(value: string, original: string): string {
+  const folder = value.endsWith("*") ? value.slice(0, -1) : value;
+  if (/[*?[]/.test(folder) || (folder !== value && folder !== "" && !folder.endsWith("/"))) {
+    throw listWildcardError(original);
+  }
+  return folder.endsWith("/") ? folder.slice(0, -1) : folder;
+}
+
+// Normalizes the phoenix_list prefix to the folder path the server expects
+// (always ending in "/", or "" for everything). Accepts "a/b", "a/b/",
+// "a/b/*" and the phoenix:// form of each, including a bare namespace
+// ("phoenix://ns"). A single bare segment lives under defaultNamespace.
 export function normalizeListPrefix(value: string | undefined, defaultNamespace?: string): string {
-  const trimmed = value?.trim();
-  if (!trimmed) {
+  const trimmed = value?.trim() ?? "";
+  const isRef = trimmed.startsWith(PHOENIX_REF_PREFIX);
+  const folder = bareListFolder(isRef ? trimmed.slice(PHOENIX_REF_PREFIX.length) : trimmed, trimmed);
+  if (isRef) {
+    if (!SECRET_PATH_CHARSET_RE.test(folder) || hasUnsafePathSegments(folder)) {
+      throw new Error(`invalid phoenix ref (allowed: letters, digits, '._-', no '.'/'..' segments): ${trimmed}`);
+    }
+    return `${folder}/`;
+  }
+  if (!folder) {
     if (!defaultNamespace) {
       return "";
     }
     assertSafeDefaultNamespace(defaultNamespace);
     return `${defaultNamespace}/`;
   }
-  if (trimmed.startsWith(PHOENIX_REF_PREFIX)) {
-    return `${refToSecretPath(trimmed)}/`.replace(/\/+/g, "/");
-  }
-  if (trimmed.startsWith("/")) {
+  if (folder.startsWith("/")) {
     throw new Error(`prefix must not start with '/': ${trimmed}`);
   }
-  const withoutTrailingSlash = trimmed.replace(/\/$/, "");
-  if (!SECRET_PATH_CHARSET_RE.test(withoutTrailingSlash) || hasUnsafePathSegments(withoutTrailingSlash)) {
+  if (!SECRET_PATH_CHARSET_RE.test(folder) || hasUnsafePathSegments(folder)) {
     throw new Error(
       `invalid list prefix (allowed: letters, digits, '._-', no '.'/'..' segments): ${trimmed}`,
     );
   }
-  if (defaultNamespace && !trimmed.includes("/")) {
+  if (defaultNamespace && !folder.includes("/")) {
     assertSafeDefaultNamespace(defaultNamespace);
-    return `${defaultNamespace}/${trimmed}`.replace(/\/?$/, "/");
+    return `${defaultNamespace}/${folder}/`;
   }
-  return trimmed.replace(/\/?$/, "/");
+  return `${folder}/`;
 }
 
 export function extractPhoenixRefs(value: unknown, results = new Set<string>()): Set<string> {
