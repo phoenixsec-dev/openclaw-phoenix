@@ -29,7 +29,7 @@ const ListParameters = {
     prefix: {
       type: "string",
       description:
-        "Optional folder to list, e.g. 'myapp' ('myapp/', 'myapp/*' and 'phoenix://myapp' mean the same; other wildcards are refused). Omit to list everything visible.",
+        "Optional folder to list: 'a/b', 'a/b/' and 'a/b/*' mean the same; other wildcards are refused. A single name like 'svc' is under your default namespace; 'phoenix://svc' is the top-level namespace. Omit for your default namespace, or everything visible if none.",
     },
   },
 };
