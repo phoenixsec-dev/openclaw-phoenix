@@ -582,3 +582,68 @@ test("PhoenixClient surfaces approval_required on HTTP 202", async () => {
     );
   });
 });
+
+test("PhoenixClient.list returns descriptions from /v1/metadata and never values", async () => {
+  const urls: string[] = [];
+  await withServer(async (req, res) => {
+    urls.push(req.url ?? "");
+    res.setHeader("content-type", "application/json");
+    res.end(
+      JSON.stringify({
+        secrets: [
+          { path: "services/browser/key", description: "Browser lane key", tags: ["browser"], value: "leak" },
+          { path: "services/browser/other", description: "" },
+        ],
+      }),
+    );
+  }, async (baseUrl) => {
+    const client = new PhoenixClient({ server: baseUrl, token: "token", sealMode: false });
+    const result = await client.list("services/browser/*");
+    assert.deepEqual(urls, ["/v1/metadata/services/browser/"]);
+    assert.deepEqual(result, {
+      prefix: "services/browser/",
+      descriptions: true,
+      secrets: [
+        { path: "services/browser/key", description: "Browser lane key" },
+        { path: "services/browser/other", description: "" },
+      ],
+    });
+  });
+});
+
+test("PhoenixClient.list falls back to bare paths when the server has no /v1/metadata", async () => {
+  const urls: string[] = [];
+  await withServer(async (req, res) => {
+    urls.push(req.url ?? "");
+    if (req.url?.startsWith("/v1/metadata/")) {
+      // Go's ServeMux answer for an unknown route on older servers.
+      res.statusCode = 404;
+      res.setHeader("content-type", "text/plain; charset=utf-8");
+      res.end("404 page not found\n");
+      return;
+    }
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ paths: ["services/browser/key"] }));
+  }, async (baseUrl) => {
+    const client = new PhoenixClient({ server: baseUrl, token: "token", sealMode: false });
+    const result = await client.list("services/browser");
+    assert.deepEqual(urls, ["/v1/metadata/services/browser/", "/v1/secrets/services/browser/"]);
+    assert.deepEqual(result, {
+      prefix: "services/browser/",
+      descriptions: false,
+      secrets: [{ path: "services/browser/key", description: "" }],
+    });
+  });
+});
+
+test("PhoenixClient.list refuses a bad wildcard before sending any request", async () => {
+  let requests = 0;
+  await withServer(async (_req, res) => {
+    requests += 1;
+    res.end("{}");
+  }, async (baseUrl) => {
+    const client = new PhoenixClient({ server: baseUrl, token: "token", sealMode: false });
+    await assert.rejects(() => client.list("services/br*"), /list takes a folder/);
+    assert.equal(requests, 0);
+  });
+});

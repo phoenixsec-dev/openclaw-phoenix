@@ -11,7 +11,7 @@ Package-oriented release hardening is in progress. This plugin is intended to sh
 This plugin adds three native OpenClaw tools plus a CLI helper:
 
 - `phoenix_resolve` — resolve one or more `phoenix://` refs through Phoenix
-- `phoenix_list` — list visible secret paths
+- `phoenix_list` — list a folder of visible secrets with what each one is for (descriptions need a Phoenix server with `/v1/metadata/`; older servers return paths only)
 - `phoenix_status` — check connectivity, admin-visible status, and TLS cert health
 - `openclaw phoenix verify` — dry-run all literal `phoenix://` refs currently present in the active gateway config. Limitation: the scan only detects strings starting with the literal `phoenix://` prefix; path-only SecretRef ids (for example bare `namespace/path` ids resolved through the Phoenix CLI exec provider's secrets configuration) are not scanned and are not covered by `verify`.
 

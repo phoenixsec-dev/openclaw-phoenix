@@ -28,7 +28,8 @@ const ListParameters = {
   properties: {
     prefix: {
       type: "string",
-      description: "Optional prefix or phoenix:// ref prefix to list under.",
+      description:
+        "Optional folder to list: 'a/b', 'a/b/' and 'a/b/*' mean the same; other wildcards are refused. A single name like 'svc' is under your default namespace; 'phoenix://svc' is the top-level namespace. Omit for your default namespace, or everything visible if none.",
     },
   },
 };
@@ -88,7 +89,8 @@ export function createPhoenixListTool(config: PhoenixPluginConfig, caller?: Phoe
   return {
     name: "phoenix_list",
     label: "Phoenix List",
-    description: "List secret paths visible to the current Phoenix credentials.",
+    description:
+      "List the secrets in a Phoenix folder with a description of what each one is for. Never returns secret values.",
     parameters: ListParameters,
     execute: async (_toolCallId: string, rawParams: Record<string, unknown>) => {
       try {
@@ -98,8 +100,11 @@ export function createPhoenixListTool(config: PhoenixPluginConfig, caller?: Phoe
         return jsonResult({
           ok: true,
           prefix: result.prefix,
-          count: result.paths.length,
-          paths: result.paths,
+          count: result.secrets.length,
+          secrets: result.secrets,
+          ...(result.descriptions
+            ? {}
+            : { note: "This Phoenix server is too old to return descriptions; only paths are listed." }),
         });
       } catch (error) {
         return jsonResult({

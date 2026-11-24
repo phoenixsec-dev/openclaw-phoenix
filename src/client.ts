@@ -52,6 +52,13 @@ export type PhoenixStatusResponse = {
   notes: string[];
 };
 
+export type PhoenixListResponse = {
+  prefix: string;
+  // false when the server predates /v1/metadata and only paths were available.
+  descriptions: boolean;
+  secrets: Array<{ path: string; description: string }>;
+};
+
 export class PhoenixApiError extends Error {
   status: number;
   type: PhoenixApiErrorPayload["type"];
@@ -198,6 +205,13 @@ function buildNonJsonResponseError(
       `Phoenix returned HTTP ${statusCode}${toolContext} with a non-JSON response body. The body was omitted from this error to avoid leaking secret material.`,
     remediation: NON_JSON_RESPONSE_REMEDIATION,
   });
+}
+
+// An older Phoenix server answers an unknown route (here /v1/metadata/) with
+// its mux's plain-text 404, which requestJson reports as a non-JSON response.
+// A JSON 404 comes from a real handler and is not this case.
+function isMissingRouteError(error: unknown): boolean {
+  return error instanceof PhoenixApiError && error.status === 404 && error.code === "PHOENIX_NON_JSON_RESPONSE";
 }
 
 function buildCallerHeaders(caller?: PhoenixCallerContext): Record<string, string> {
@@ -598,14 +612,53 @@ export class PhoenixClient {
     };
   }
 
-  async list(prefix?: string, options: { caller?: PhoenixCallerContext } = {}) {
+  // Lists one folder with each secret's description (never values). Uses
+  // /v1/metadata/ and falls back to the bare /v1/secrets/ list when an older
+  // server answers that route with its plain-text 404.
+  async list(prefix?: string, options: { caller?: PhoenixCallerContext } = {}): Promise<PhoenixListResponse> {
     const normalizedPrefix = normalizeListPrefix(prefix, this.config.defaultNamespace);
     const encodedPrefix = normalizedPrefix.split("/").map(encodeURIComponent).join("/");
+    let response: JsonResponse;
+    try {
+      response = await this.requestJson({
+        method: "GET",
+        pathname: `/v1/metadata/${encodedPrefix}`,
+        toolName: "phoenix_list",
+        caller: options.caller,
+      });
+    } catch (error) {
+      if (isMissingRouteError(error)) {
+        return await this.listPaths(normalizedPrefix, encodedPrefix, options.caller);
+      }
+      throw error;
+    }
+    if (response.statusCode !== 200) {
+      throw toApiError(response.statusCode, response.body);
+    }
+    if (!isRecord(response.body)) {
+      throw new Error("Phoenix list response was not an object");
+    }
+    const secrets = Array.isArray(response.body.secrets)
+      ? response.body.secrets.filter(isRecord).flatMap((entry) =>
+          typeof entry.path === "string"
+            ? [{ path: entry.path, description: typeof entry.description === "string" ? entry.description : "" }]
+            : [],
+        )
+      : [];
+    return { prefix: normalizedPrefix, descriptions: true, secrets };
+  }
+
+  // list() for servers without /v1/metadata: bare paths, empty descriptions.
+  private async listPaths(
+    normalizedPrefix: string,
+    encodedPrefix: string,
+    caller?: PhoenixCallerContext,
+  ): Promise<PhoenixListResponse> {
     const response = await this.requestJson({
       method: "GET",
       pathname: `/v1/secrets/${encodedPrefix}`,
       toolName: "phoenix_list",
-      caller: options.caller,
+      caller,
     });
     if (response.statusCode !== 200) {
       throw toApiError(response.statusCode, response.body);
@@ -618,7 +671,8 @@ export class PhoenixClient {
       : [];
     return {
       prefix: normalizedPrefix,
-      paths,
+      descriptions: false,
+      secrets: paths.map((path) => ({ path, description: "" })),
     };
   }
 

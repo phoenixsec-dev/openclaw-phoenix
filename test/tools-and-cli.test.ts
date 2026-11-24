@@ -27,8 +27,8 @@ test("tool handlers return structured success payloads", async () => {
       res.end(JSON.stringify({ values: { "phoenix://openclaw/key": "value" } }));
       return;
     }
-    if (req.url === "/v1/secrets/openclaw/") {
-      res.end(JSON.stringify({ paths: ["openclaw/key"] }));
+    if (req.url === "/v1/metadata/openclaw/") {
+      res.end(JSON.stringify({ secrets: [{ path: "openclaw/key", description: "Test key" }] }));
       return;
     }
     if (req.url === "/v1/health") {
